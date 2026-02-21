@@ -129,6 +129,18 @@ class SignalTemplate:
         elif template_type == "ImmunityTestTemplate":
             from .immunity import ImmunityTestTemplate
             return ImmunityTestTemplate.from_dict(data)
+        elif template_type == "LTEDownlinkTemplate":
+            from .lte import LTEDownlinkTemplate
+            return LTEDownlinkTemplate.from_dict(data)
+        elif template_type == "NR5GTemplate":
+            from .nr5g import NR5GTemplate
+            return NR5GTemplate.from_dict(data)
+        elif template_type == "WLANTemplate":
+            from .wlan import WLANTemplate
+            return WLANTemplate.from_dict(data)
+        elif template_type == "TwoToneTemplate":
+            from .two_tone import TwoToneTemplate
+            return TwoToneTemplate.from_dict(data)
         else:
             return cls.from_dict(data)
 

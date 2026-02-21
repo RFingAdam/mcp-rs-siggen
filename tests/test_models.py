@@ -2,11 +2,14 @@
 
 
 from rs_siggen_mcp.models.siggen_types import (
+    BasebandConfig,
     DigitalStandard,
     InstrumentInfo,
+    ModulationConfig,
     ModulationType,
     RFConfig,
     SignalGeneratorFamily,
+    SweepConfig,
     WaveformInfo,
 )
 
@@ -202,3 +205,172 @@ class TestWaveformInfo:
         assert d["name"] == "test"
         assert d["path"] == "/path"
         assert d["sample_rate_hz"] is None
+
+
+class TestSweepConfig:
+    """Test SweepConfig dataclass."""
+
+    def test_defaults(self):
+        """Test default sweep config."""
+        config = SweepConfig(start=1e9, stop=2e9)
+        assert config.start == 1e9
+        assert config.stop == 2e9
+        assert config.step is None
+        assert config.points is None
+        assert config.dwell_time_s == 0.01
+
+    def test_with_step(self):
+        """Test sweep config with step size."""
+        config = SweepConfig(start=1e9, stop=2e9, step=10e6)
+        assert config.step == 10e6
+
+    def test_with_points(self):
+        """Test sweep config with number of points."""
+        config = SweepConfig(start=1e9, stop=2e9, points=100)
+        assert config.points == 100
+
+    def test_custom_dwell(self):
+        """Test sweep config with custom dwell time."""
+        config = SweepConfig(start=1e9, stop=2e9, dwell_time_s=0.5)
+        assert config.dwell_time_s == 0.5
+
+    def test_to_dict(self):
+        """Test dictionary conversion."""
+        config = SweepConfig(
+            start=1e9, stop=2e9, step=10e6, dwell_time_s=0.1
+        )
+        d = config.to_dict()
+        assert d["start"] == 1e9
+        assert d["stop"] == 2e9
+        assert d["step"] == 10e6
+        assert d["points"] is None
+        assert d["dwell_time_s"] == 0.1
+
+
+class TestModulationConfig:
+    """Test ModulationConfig dataclass."""
+
+    def test_am_config(self):
+        """Test AM modulation config."""
+        config = ModulationConfig(
+            mod_type="AM", enabled=True, depth_percent=80.0
+        )
+        assert config.mod_type == "AM"
+        assert config.enabled is True
+        assert config.depth_percent == 80.0
+        assert config.source == "INTernal"
+
+    def test_fm_config(self):
+        """Test FM modulation config."""
+        config = ModulationConfig(
+            mod_type="FM", enabled=True, deviation_hz=75e3
+        )
+        assert config.mod_type == "FM"
+        assert config.deviation_hz == 75e3
+
+    def test_pulse_config(self):
+        """Test pulse modulation config."""
+        config = ModulationConfig(
+            mod_type="PULSE",
+            enabled=True,
+            pulse_width_s=1e-6,
+            pulse_period_s=10e-6,
+        )
+        assert config.pulse_width_s == 1e-6
+        assert config.pulse_period_s == 10e-6
+
+    def test_defaults(self):
+        """Test default modulation config."""
+        config = ModulationConfig(mod_type="AM")
+        assert config.enabled is False
+        assert config.depth_percent is None
+        assert config.deviation_hz is None
+        assert config.pulse_width_s is None
+        assert config.pulse_period_s is None
+        assert config.source == "INTernal"
+
+    def test_to_dict_am(self):
+        """Test AM config dictionary conversion."""
+        config = ModulationConfig(
+            mod_type="AM", enabled=True, depth_percent=80.0
+        )
+        d = config.to_dict()
+        assert d["mod_type"] == "AM"
+        assert d["enabled"] is True
+        assert d["depth_percent"] == 80.0
+        assert d["source"] == "INTernal"
+        assert "deviation_hz" not in d
+        assert "pulse_width_s" not in d
+
+    def test_to_dict_fm(self):
+        """Test FM config dictionary conversion."""
+        config = ModulationConfig(
+            mod_type="FM", enabled=True, deviation_hz=75e3
+        )
+        d = config.to_dict()
+        assert d["mod_type"] == "FM"
+        assert d["deviation_hz"] == 75e3
+        assert "depth_percent" not in d
+
+    def test_to_dict_pulse(self):
+        """Test pulse config dictionary conversion."""
+        config = ModulationConfig(
+            mod_type="PULSE",
+            enabled=True,
+            pulse_width_s=1e-6,
+            pulse_period_s=10e-6,
+        )
+        d = config.to_dict()
+        assert d["pulse_width_s"] == 1e-6
+        assert d["pulse_period_s"] == 10e-6
+
+
+class TestBasebandConfig:
+    """Test BasebandConfig dataclass."""
+
+    def test_defaults(self):
+        """Test default baseband config."""
+        config = BasebandConfig()
+        assert config.waveform_file is None
+        assert config.clock_rate_hz is None
+        assert config.arb_enabled is False
+        assert config.digital_standard is None
+
+    def test_arb_config(self):
+        """Test ARB baseband config."""
+        config = BasebandConfig(
+            waveform_file="/var/user/waveform/test.wv",
+            clock_rate_hz=100e6,
+            arb_enabled=True,
+        )
+        assert config.waveform_file == "/var/user/waveform/test.wv"
+        assert config.clock_rate_hz == 100e6
+        assert config.arb_enabled is True
+
+    def test_digital_standard_config(self):
+        """Test digital standard baseband config."""
+        config = BasebandConfig(digital_standard="LTE")
+        assert config.digital_standard == "LTE"
+
+    def test_to_dict(self):
+        """Test dictionary conversion."""
+        config = BasebandConfig(
+            waveform_file="/var/user/waveform/test.wv",
+            clock_rate_hz=100e6,
+            arb_enabled=True,
+            digital_standard="NR5G",
+        )
+        d = config.to_dict()
+        assert d["waveform_file"] == "/var/user/waveform/test.wv"
+        assert d["clock_rate_hz"] == 100e6
+        assert d["arb_enabled"] is True
+        assert d["digital_standard"] == "NR5G"
+
+    def test_to_dict_defaults(self):
+        """Test dictionary conversion with defaults."""
+        config = BasebandConfig()
+        d = config.to_dict()
+        assert d["waveform_file"] is None
+        assert d["clock_rate_hz"] is None
+        assert d["arb_enabled"] is False
+        assert d["digital_standard"] is None
