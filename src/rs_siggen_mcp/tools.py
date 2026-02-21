@@ -12,6 +12,7 @@ from .driver import RSSignalGeneratorDriver
 from .exceptions import SignalGeneratorError
 from .limits import LimitManager
 from .models import InstrumentInfo
+from .safety.validators import sanitize_scpi_param, validate_safe_path
 from .state import InstrumentState, StateManager
 from .templates import (
     CWSignalTemplate,
@@ -1117,7 +1118,9 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             })
         elif name == "siggen_list_waveforms":
             sg = await _get_siggen(host, port)
-            directory = arguments.get("directory", "/var/user/waveform")
+            directory = sanitize_scpi_param(
+                arguments.get("directory", "/var/user/waveform")
+            )
             response = await sg.scpi_query(f"MMEMory:CATalog? '{directory}'")
             return _format_result({
                 "directory": directory,
@@ -1130,7 +1133,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
         elif name == "siggen_configure_lte":
             sg = await _get_siggen(host, port)
             bw = arguments["bandwidth_mhz"]
-            duplex = arguments.get("duplex_mode", "FDD")
+            duplex = sanitize_scpi_param(arguments.get("duplex_mode", "FDD"))
             await sg.scpi_send("SOURce1:BB:EUTRa:PRESet")
             await sg.scpi_send(f"SOURce1:BB:EUTRa:DL:BW BW{bw:.0f}_00" if bw != 1.4
                                else "SOURce1:BB:EUTRa:DL:BW BW1_40")
@@ -1158,7 +1161,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             })
         elif name == "siggen_configure_wlan":
             sg = await _get_siggen(host, port)
-            standard = arguments["standard"]
+            standard = sanitize_scpi_param(arguments["standard"])
             bw = arguments.get("bandwidth_mhz", 20)
             await sg.scpi_send("SOURce1:BB:WLNN:PRESet")
             # Map standard to R&S SCPI parameter
@@ -1177,7 +1180,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             })
         elif name == "siggen_configure_bluetooth":
             sg = await _get_siggen(host, port)
-            mode = arguments.get("mode", "LE")
+            mode = sanitize_scpi_param(arguments.get("mode", "LE"))
             await sg.scpi_send("SOURce1:BB:BTOoth:PRESet")
             await sg.scpi_send(f"SOURce1:BB:BTOoth:PACKet:TYPE {mode}")
             await sg.scpi_send("SOURce1:BB:BTOoth:STATe ON")
@@ -1300,10 +1303,36 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
         # Raw SCPI Tools
         # =================================================================
         elif name == "siggen_scpi_send":
+            settings = get_settings()
+            if not settings.allow_raw_scpi:
+                return _format_error(
+                    ValueError(
+                        "Raw SCPI access is disabled. Set SIGGEN_ALLOW_RAW_SCPI=true "
+                        "to enable raw SCPI command execution."
+                    )
+                )
+            logger.warning(
+                "Raw SCPI send: command=%r (tool=%s)",
+                arguments["command"],
+                name,
+            )
             sg = await _get_siggen(host, port)
             await sg.scpi_send(arguments["command"])
             return _format_result({"status": "sent", "command": arguments["command"]})
         elif name == "siggen_scpi_query":
+            settings = get_settings()
+            if not settings.allow_raw_scpi:
+                return _format_error(
+                    ValueError(
+                        "Raw SCPI access is disabled. Set SIGGEN_ALLOW_RAW_SCPI=true "
+                        "to enable raw SCPI query execution."
+                    )
+                )
+            logger.warning(
+                "Raw SCPI query: command=%r (tool=%s)",
+                arguments["command"],
+                name,
+            )
             sg = await _get_siggen(host, port)
             response = await sg.scpi_query(arguments["command"])
             return _format_result({"command": arguments["command"], "response": response})
@@ -1429,7 +1458,10 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
                     freq, power or -10.0
                 )
             elif template_name.endswith(".json"):
-                _current_template = SignalTemplate.load(template_name)
+                safe_template_path = validate_safe_path(
+                    template_name, _state_manager.state_directory
+                )
+                _current_template = SignalTemplate.load(safe_template_path)
             else:
                 return _format_error(ValueError(f"Unknown template: {template_name}"))
 
@@ -1471,22 +1503,28 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
         # =================================================================
         elif name == "siggen_save_state":
             sg = await _get_siggen(host, port)
+            safe_path = validate_safe_path(
+                arguments["filepath"], _state_manager.state_directory
+            )
             state = await _state_manager.capture_state(sg)
             if arguments.get("notes"):
                 state.notes = arguments["notes"]
-            state.save(arguments["filepath"])
+            state.save(safe_path)
             return _format_result({
                 "status": "state_saved",
-                "filepath": arguments["filepath"],
+                "filepath": str(safe_path),
                 "summary": state.get_summary(),
             })
         elif name == "siggen_load_state":
             sg = await _get_siggen(host, port)
-            state = InstrumentState.load(arguments["filepath"])
+            safe_path = validate_safe_path(
+                arguments["filepath"], _state_manager.state_directory
+            )
+            state = InstrumentState.load(safe_path)
             await _state_manager.restore_state(sg, state)
             return _format_result({
                 "status": "state_restored",
-                "filepath": arguments["filepath"],
+                "filepath": str(safe_path),
                 "summary": state.get_summary(),
             })
         elif name == "siggen_get_full_state":
