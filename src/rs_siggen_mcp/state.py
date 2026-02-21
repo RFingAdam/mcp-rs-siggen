@@ -4,7 +4,10 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .driver.siggen_driver import RSSignalGeneratorDriver
 
 
 @dataclass
@@ -236,7 +239,7 @@ class StateManager:
             state_directory = Path("./siggen_states")
         self.state_directory = Path(state_directory)
 
-    async def capture_state(self, driver) -> InstrumentState:
+    async def capture_state(self, driver: "RSSignalGeneratorDriver") -> InstrumentState:
         """
         Capture current signal generator state.
 
@@ -322,7 +325,9 @@ class StateManager:
             instrument_info=instrument_info,
         )
 
-    async def restore_state(self, driver, state: InstrumentState) -> None:
+    async def restore_state(
+        self, driver: "RSSignalGeneratorDriver", state: InstrumentState
+    ) -> None:
         """
         Restore signal generator to saved state.
 

@@ -421,6 +421,22 @@ class RSSignalGeneratorDriver:
     # Raw SCPI Access
     # =========================================================================
 
+    async def wait_opc(self, timeout: float | None = None) -> bool:
+        """Wait for operation complete."""
+        return await self._scpi.wait_opc(timeout)
+
+    def validate_frequency_range(self, start_hz: float, stop_hz: float) -> None:
+        """Validate a frequency range."""
+        self._safety.validate_frequency_range(start_hz, stop_hz)
+
+    def validate_frequency(self, frequency_hz: float) -> None:
+        """Validate a single frequency value."""
+        self._safety.validate_frequency(frequency_hz)
+
+    def validate_power(self, power_dbm: float) -> None:
+        """Validate power level."""
+        self._safety.validate_power(power_dbm)
+
     async def scpi_send(self, command: str) -> None:
         """
         Send raw SCPI command.

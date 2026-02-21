@@ -1,6 +1,7 @@
 """MCP tool definitions and handlers for R&S signal generator operations."""
 
 import asyncio
+import json
 import logging
 from typing import Any
 
@@ -81,8 +82,6 @@ async def _close_siggen(host: str, port: int) -> bool:
 
 def _format_result(result: Any) -> list[TextContent]:
     """Format result as MCP TextContent."""
-    import json
-
     if isinstance(result, dict):
         text = json.dumps(result, indent=2, default=str)
     elif isinstance(result, list):
@@ -1072,22 +1071,23 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             return _format_result({"status": "iq_modulation_disabled"})
         elif name == "siggen_configure_iq_impairments":
             sg = await _get_siggen(host, port)
+            if "i_offset_percent" in arguments:
+                await sg.scpi_send(
+                    f"SOURce:IQ:IMPairment:LEAKage:I {arguments['i_offset_percent']}"
+                )
+            if "q_offset_percent" in arguments:
+                await sg.scpi_send(
+                    f"SOURce:IQ:IMPairment:LEAKage:Q {arguments['q_offset_percent']}"
+                )
             if "gain_imbalance_db" in arguments:
                 await sg.scpi_send(
-                    f"SOURce:IQ:IMPairment:LEAKage:I {arguments.get('i_offset_percent', 0)}"
+                    f"SOURce:IQ:IMPairment:IQRatio:MAGNitude {arguments['gain_imbalance_db']}"
                 )
+            if "quadrature_offset_deg" in arguments:
                 await sg.scpi_send(
-                    f"SOURce:IQ:IMPairment:LEAKage:Q {arguments.get('q_offset_percent', 0)}"
+                    f"SOURce:IQ:IMPairment:QUADrature:ANGLe {arguments['quadrature_offset_deg']}"
                 )
-                gain = arguments.get('gain_imbalance_db', 0)
-                await sg.scpi_send(
-                    f"SOURce:IQ:IMPairment:IQRatio:MAGNitude {gain}"
-                )
-                quad = arguments.get('quadrature_offset_deg', 0)
-                await sg.scpi_send(
-                    f"SOURce:IQ:IMPairment:QUADrature:ANGLe {quad}"
-                )
-                await sg.scpi_send("SOURce:IQ:IMPairment:STATe ON")
+            await sg.scpi_send("SOURce:IQ:IMPairment:STATe ON")
             return _format_result({"status": "iq_impairments_configured"})
 
         # =================================================================
@@ -1189,7 +1189,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
         elif name == "siggen_generate_waveform":
             sg = await _get_siggen(host, port)
             await sg.scpi_send("SOURce1:BB:ARBitrary:TRIGger:EXECute")
-            await sg._scpi.wait_opc(timeout=120.0)
+            await sg.wait_opc(timeout=120.0)
             return _format_result({"status": "waveform_generated"})
 
         # =================================================================
@@ -1199,7 +1199,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             sg = await _get_siggen(host, port)
             start = arguments["start_freq_hz"]
             stop = arguments["stop_freq_hz"]
-            sg._safety.validate_frequency_range(start, stop)
+            sg.validate_frequency_range(start, stop)
             await sg.scpi_send(f"SOURce1:FREQuency:STARt {start}")
             await sg.scpi_send(f"SOURce1:FREQuency:STOP {stop}")
             if "step_hz" in arguments:
@@ -1217,8 +1217,8 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             sg = await _get_siggen(host, port)
             start = arguments["start_power_dbm"]
             stop = arguments["stop_power_dbm"]
-            sg._safety.validate_power(start)
-            sg._safety.validate_power(stop)
+            sg.validate_power(start)
+            sg.validate_power(stop)
             await sg.scpi_send(f"SOURce1:POWer:STARt {start}")
             await sg.scpi_send(f"SOURce1:POWer:STOP {stop}")
             if "step_db" in arguments:
@@ -1242,9 +1242,9 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
                 )
             # Validate all values
             for f in freqs:
-                sg._safety.validate_frequency(f)
+                sg.validate_frequency(f)
             for p in powers:
-                sg._safety.validate_power(p)
+                sg.validate_power(p)
             freq_str = ",".join(str(f) for f in freqs)
             pow_str = ",".join(str(p) for p in powers)
             await sg.scpi_send(f"SOURce1:LIST:FREQuency {freq_str}")

@@ -1,18 +1,9 @@
 """Pytest configuration and fixtures."""
 
-import asyncio
 import os
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
-
-@pytest.fixture
-def event_loop():
-    """Create event loop for async tests."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest.fixture

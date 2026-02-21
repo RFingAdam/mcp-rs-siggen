@@ -109,9 +109,9 @@ class TestSafetyValidator:
 
     def test_validate_modulation_depth_out_of_range(self):
         """Test invalid modulation depths."""
-        with pytest.raises(ValueError):
+        with pytest.raises(SafetyError):
             self.validator.validate_modulation_depth(101)
-        with pytest.raises(ValueError):
+        with pytest.raises(SafetyError):
             self.validator.validate_modulation_depth(-1)
 
     def test_validate_deviation_ok(self):
@@ -121,7 +121,7 @@ class TestSafetyValidator:
 
     def test_validate_deviation_negative(self):
         """Test negative FM deviation."""
-        with pytest.raises(ValueError):
+        with pytest.raises(SafetyError):
             self.validator.validate_deviation(-1)
 
     def test_validate_pulse_width_ok(self):
@@ -131,12 +131,12 @@ class TestSafetyValidator:
 
     def test_validate_pulse_width_zero(self):
         """Test zero pulse width."""
-        with pytest.raises(ValueError):
+        with pytest.raises(SafetyError):
             self.validator.validate_pulse_width(0)
 
     def test_validate_pulse_width_exceeds_period(self):
         """Test pulse width >= period."""
-        with pytest.raises(ValueError):
+        with pytest.raises(SafetyError):
             self.validator.validate_pulse_width(10e-6, 5e-6)
 
     def test_default_limits(self):
@@ -157,12 +157,12 @@ class TestSafetyValidator:
         limits = SafetyLimits(max_am_depth_pct=80.0)
         validator = SafetyValidator(limits)
         validator.validate_modulation_depth(80.0)
-        with pytest.raises(ValueError):
+        with pytest.raises(SafetyError):
             validator.validate_modulation_depth(81.0)
 
     def test_validate_deviation_exceeds_max(self):
         """Test FM deviation exceeding maximum."""
-        with pytest.raises(ValueError):
+        with pytest.raises(SafetyError):
             self.validator.validate_deviation(41e6)
 
     def test_validate_deviation_at_max(self):
@@ -174,5 +174,5 @@ class TestSafetyValidator:
         limits = SafetyLimits(max_fm_deviation_hz=10e6)
         validator = SafetyValidator(limits)
         validator.validate_deviation(10e6)
-        with pytest.raises(ValueError):
+        with pytest.raises(SafetyError):
             validator.validate_deviation(11e6)
