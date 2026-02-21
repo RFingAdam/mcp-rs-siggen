@@ -1,10 +1,16 @@
-# R&S Signal Generator MCP Server
+<p align="center">
+  <img src="assets/logo.svg" alt="R&S Signal Generator MCP Server" width="200">
+</p>
 
-[![CI](https://github.com/RFingAdam/mcp-rs-siggen/actions/workflows/ci.yml/badge.svg)](https://github.com/RFingAdam/mcp-rs-siggen/actions/workflows/ci.yml)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-green.svg)](LICENSE)
+<h1 align="center">R&S Signal Generator MCP Server</h1>
 
-MCP (Model Context Protocol) server for Rohde & Schwarz signal generator automation via TCP/IP SCPI. Control signal generators from Claude Desktop, Claude Code, or any MCP-compatible client with 53 tools across 13 categories.
+<p align="center">
+  <a href="https://github.com/RFingAdam/mcp-rs-siggen/actions/workflows/ci.yml"><img src="https://github.com/RFingAdam/mcp-rs-siggen/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green.svg" alt="License: Apache-2.0"></a>
+</p>
+
+MCP (Model Context Protocol) server for Rohde & Schwarz signal generator automation via TCP/IP SCPI. Control signal generators from Claude Desktop, Claude Code, OpenAI Agents, or any MCP-compatible client with 53 tools across 13 categories.
 
 ## Architecture
 
@@ -106,6 +112,43 @@ Add to your project's `.mcp.json`:
     }
   }
 }
+```
+
+### OpenAI Agents SDK
+
+Use this MCP server with the [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/mcp/):
+
+```python
+from agents import Agent
+from agents.mcp import MCPServerStdio
+
+async with MCPServerStdio(
+    command="rs-siggen-mcp",
+    env={"SIGGEN_DEFAULT_HOST": "192.168.1.100"},
+) as siggen_server:
+    agent = Agent(
+        name="RF Test Engineer",
+        instructions="You control R&S signal generators for RF testing.",
+        mcp_servers=[siggen_server],
+    )
+```
+
+Or with `uv` for development:
+
+```python
+async with MCPServerStdio(
+    command="uv",
+    args=["--directory", "/path/to/mcp-rs-siggen", "run", "rs-siggen-mcp"],
+) as siggen_server:
+    # ...
+```
+
+### Other MCP Clients
+
+This server communicates via stdio and works with any MCP-compatible client. Start the server process and connect via stdin/stdout:
+
+```bash
+rs-siggen-mcp
 ```
 
 ## Tool Reference
