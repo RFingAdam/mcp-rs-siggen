@@ -12,7 +12,15 @@ from .exceptions import SignalGeneratorError
 from .limits import LimitManager
 from .models import InstrumentInfo
 from .state import InstrumentState, StateManager
-from .templates import CWSignalTemplate, ImmunityTestTemplate, SignalTemplate
+from .templates import (
+    CWSignalTemplate,
+    ImmunityTestTemplate,
+    LTEDownlinkTemplate,
+    NR5GTemplate,
+    SignalTemplate,
+    TwoToneTemplate,
+    WLANTemplate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -827,7 +835,10 @@ def get_tools() -> list[Tool]:
                         "type": "string",
                         "description": (
                             "Template name (cw_wifi_24ghz, cw_1ghz, "
-                            "iec_61000_4_3, iso_11452_2) or JSON file path"
+                            "iec_61000_4_3, iso_11452_2, lte_band1_10mhz, "
+                            "lte_band7_20mhz, nr5g_n78_100mhz, nr5g_n41_50mhz, "
+                            "wlan_wifi6_80mhz, wlan_wifi6e_160mhz, "
+                            "two_tone_1mhz, two_tone_10mhz) or JSON file path"
                         ),
                     },
                     "frequency_hz": {
@@ -1336,6 +1347,38 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
                         "name": "iso_11452_2",
                         "description": "ISO 11452-2 immunity (200 V/m)",
                     },
+                    {
+                        "name": "lte_band1_10mhz",
+                        "description": "LTE FDD Band 1 10 MHz downlink",
+                    },
+                    {
+                        "name": "lte_band7_20mhz",
+                        "description": "LTE FDD Band 7 20 MHz downlink",
+                    },
+                    {
+                        "name": "nr5g_n78_100mhz",
+                        "description": "5G NR Band n78 100 MHz",
+                    },
+                    {
+                        "name": "nr5g_n41_50mhz",
+                        "description": "5G NR Band n41 50 MHz",
+                    },
+                    {
+                        "name": "wlan_wifi6_80mhz",
+                        "description": "WiFi 6 (802.11ax) 80 MHz",
+                    },
+                    {
+                        "name": "wlan_wifi6e_160mhz",
+                        "description": "WiFi 6E (802.11ax) 160 MHz",
+                    },
+                    {
+                        "name": "two_tone_1mhz",
+                        "description": "Two-tone 1 MHz spacing for IP3/IMD testing",
+                    },
+                    {
+                        "name": "two_tone_10mhz",
+                        "description": "Two-tone 10 MHz spacing",
+                    },
                 ],
                 "custom": "Provide frequency_hz and power_dbm for custom CW templates",
             })
@@ -1365,6 +1408,22 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
                 _current_template = ImmunityTestTemplate.iec_61000_4_3(level)
             elif template_name == "iso_11452_2":
                 _current_template = ImmunityTestTemplate.iso_11452_2()
+            elif template_name == "lte_band1_10mhz":
+                _current_template = LTEDownlinkTemplate.band_1_10mhz()
+            elif template_name == "lte_band7_20mhz":
+                _current_template = LTEDownlinkTemplate.band_7_20mhz()
+            elif template_name == "nr5g_n78_100mhz":
+                _current_template = NR5GTemplate.n78_100mhz()
+            elif template_name == "nr5g_n41_50mhz":
+                _current_template = NR5GTemplate.n41_50mhz()
+            elif template_name == "wlan_wifi6_80mhz":
+                _current_template = WLANTemplate.wifi6_80mhz()
+            elif template_name == "wlan_wifi6e_160mhz":
+                _current_template = WLANTemplate.wifi6e_160mhz()
+            elif template_name == "two_tone_1mhz":
+                _current_template = TwoToneTemplate.standard_1mhz_spacing()
+            elif template_name == "two_tone_10mhz":
+                _current_template = TwoToneTemplate.standard_10mhz_spacing()
             elif freq is not None:
                 _current_template = CWSignalTemplate.at_frequency(
                     freq, power or -10.0

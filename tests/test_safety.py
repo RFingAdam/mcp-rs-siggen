@@ -16,6 +16,8 @@ class TestSafetyLimits:
         assert limits.min_power_dbm == -140.0
         assert limits.max_frequency_hz == 67e9
         assert limits.min_frequency_hz == 8e3
+        assert limits.max_am_depth_pct == 100.0
+        assert limits.max_fm_deviation_hz == 40e6
 
     def test_custom_limits(self):
         """Test custom safety limits."""
@@ -149,3 +151,28 @@ class TestSafetyValidator:
         validator = SafetyValidator(limits)
         with pytest.raises(SafetyError):
             validator.validate_power(1.0)
+
+    def test_custom_am_depth_limit(self):
+        """Test custom AM depth limit."""
+        limits = SafetyLimits(max_am_depth_pct=80.0)
+        validator = SafetyValidator(limits)
+        validator.validate_modulation_depth(80.0)
+        with pytest.raises(ValueError):
+            validator.validate_modulation_depth(81.0)
+
+    def test_validate_deviation_exceeds_max(self):
+        """Test FM deviation exceeding maximum."""
+        with pytest.raises(ValueError):
+            self.validator.validate_deviation(41e6)
+
+    def test_validate_deviation_at_max(self):
+        """Test FM deviation at exactly the maximum."""
+        self.validator.validate_deviation(40e6)
+
+    def test_custom_fm_deviation_limit(self):
+        """Test custom FM deviation limit."""
+        limits = SafetyLimits(max_fm_deviation_hz=10e6)
+        validator = SafetyValidator(limits)
+        validator.validate_deviation(10e6)
+        with pytest.raises(ValueError):
+            validator.validate_deviation(11e6)

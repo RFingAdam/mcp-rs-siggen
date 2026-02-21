@@ -232,3 +232,73 @@ class WaveformInfo:
             "samples": self.samples,
             "runtime_s": self.runtime_s,
         }
+
+
+@dataclass
+class SweepConfig:
+    """Frequency or power sweep configuration."""
+
+    start: float
+    stop: float
+    step: float | None = None
+    points: int | None = None
+    dwell_time_s: float = 0.01
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "start": self.start,
+            "stop": self.stop,
+            "step": self.step,
+            "points": self.points,
+            "dwell_time_s": self.dwell_time_s,
+        }
+
+
+@dataclass
+class ModulationConfig:
+    """Modulation configuration."""
+
+    mod_type: str  # AM, FM, PM, PULSE, IQ
+    enabled: bool = False
+    depth_percent: float | None = None  # AM
+    deviation_hz: float | None = None   # FM/PM
+    pulse_width_s: float | None = None  # Pulse
+    pulse_period_s: float | None = None  # Pulse
+    source: str = "INTernal"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        result: dict[str, Any] = {
+            "mod_type": self.mod_type,
+            "enabled": self.enabled,
+            "source": self.source,
+        }
+        if self.depth_percent is not None:
+            result["depth_percent"] = self.depth_percent
+        if self.deviation_hz is not None:
+            result["deviation_hz"] = self.deviation_hz
+        if self.pulse_width_s is not None:
+            result["pulse_width_s"] = self.pulse_width_s
+        if self.pulse_period_s is not None:
+            result["pulse_period_s"] = self.pulse_period_s
+        return result
+
+
+@dataclass
+class BasebandConfig:
+    """Baseband/ARB configuration."""
+
+    waveform_file: str | None = None
+    clock_rate_hz: float | None = None
+    arb_enabled: bool = False
+    digital_standard: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "waveform_file": self.waveform_file,
+            "clock_rate_hz": self.clock_rate_hz,
+            "arb_enabled": self.arb_enabled,
+            "digital_standard": self.digital_standard,
+        }

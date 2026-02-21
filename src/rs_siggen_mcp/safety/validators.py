@@ -20,6 +20,8 @@ class SafetyLimits:
     min_power_dbm: float = -140.0
     max_frequency_hz: float = 67e9  # 67 GHz (SMW200A max)
     min_frequency_hz: float = 8e3  # 8 kHz
+    max_am_depth_pct: float = 100.0
+    max_fm_deviation_hz: float = 40e6
 
 
 class SafetyValidator:
@@ -130,9 +132,10 @@ class SafetyValidator:
         Raises:
             ValueError: If depth is out of range
         """
-        if depth_percent < 0 or depth_percent > 100:
+        if depth_percent < 0 or depth_percent > self.limits.max_am_depth_pct:
             raise ValueError(
-                f"AM modulation depth {depth_percent}% must be between 0 and 100%"
+                f"AM modulation depth {depth_percent}% must be between 0 and "
+                f"{self.limits.max_am_depth_pct}%"
             )
 
         logger.debug(f"AM depth {depth_percent}% validated")
@@ -145,10 +148,16 @@ class SafetyValidator:
             deviation_hz: FM deviation in Hz
 
         Raises:
-            ValueError: If deviation is negative
+            ValueError: If deviation is negative or exceeds maximum
         """
         if deviation_hz < 0:
             raise ValueError(f"FM deviation {deviation_hz} Hz must be positive")
+
+        if deviation_hz > self.limits.max_fm_deviation_hz:
+            raise ValueError(
+                f"FM deviation {deviation_hz/1e6:.3f} MHz exceeds maximum "
+                f"{self.limits.max_fm_deviation_hz/1e6:.3f} MHz"
+            )
 
         logger.debug(f"FM deviation {deviation_hz/1e3:.3f} kHz validated")
 
