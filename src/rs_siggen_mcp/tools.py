@@ -5,11 +5,18 @@ import json
 import logging
 from typing import Any
 
-from mcp.types import TextContent, Tool
+from mcp.types import CallToolResult, TextContent, Tool
 
 from .config import get_settings
 from .driver import RSSignalGeneratorDriver
-from .exceptions import SignalGeneratorError
+from .exceptions import (
+    CommunicationError,
+    ConfigurationError,
+    ConnectionError,
+    SafetyError,
+    SignalGeneratorError,
+    TimeoutError,
+)
 from .limits import LimitManager
 from .models import InstrumentInfo
 from .safety.validators import sanitize_scpi_param, validate_safe_path
@@ -25,6 +32,12 @@ from .templates import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Locks for protecting shared mutable state (Issue #4)
+_connection_lock = asyncio.Lock()
+_template_lock = asyncio.Lock()
+_state_lock = asyncio.Lock()
+_limit_lock = asyncio.Lock()
 
 # Global connection manager
 _siggen_connections: dict[str, RSSignalGeneratorDriver] = {}
@@ -53,48 +66,56 @@ async def _get_siggen(
     port = port or settings.default_port
     key = _get_connection_key(host, port)
 
-    if key in _siggen_connections:
-        sg = _siggen_connections[key]
-        if sg.is_connected:
-            return sg
+    async with _connection_lock:
+        if key in _siggen_connections:
+            sg = _siggen_connections[key]
+            if sg.is_connected:
+                return sg
 
-    # Create new connection
-    sg = RSSignalGeneratorDriver(
-        host=host,
-        port=port,
-        timeout=settings.connection_timeout,
-        command_timeout=settings.command_timeout,
-        safety_limits=settings.get_safety_limits(),
-    )
-    await sg.connect()
-    _siggen_connections[key] = sg
-    return sg
+        # Create new connection
+        sg = RSSignalGeneratorDriver(
+            host=host,
+            port=port,
+            timeout=settings.connection_timeout,
+            command_timeout=settings.command_timeout,
+            safety_limits=settings.get_safety_limits(),
+        )
+        await sg.connect()
+        _siggen_connections[key] = sg
+        return sg
 
 
 async def _close_siggen(host: str, port: int) -> bool:
     """Close signal generator connection."""
     key = _get_connection_key(host, port)
-    if key in _siggen_connections:
-        sg = _siggen_connections.pop(key)
-        await sg.disconnect()
-        return True
-    return False
+    async with _connection_lock:
+        if key in _siggen_connections:
+            sg = _siggen_connections.pop(key)
+            await sg.disconnect()
+            return True
+        return False
 
 
-def _format_result(result: Any) -> list[TextContent]:
-    """Format result as MCP TextContent."""
+def _format_result(result: Any) -> CallToolResult:
+    """Format result as MCP CallToolResult with isError=False."""
     if isinstance(result, dict):
         text = json.dumps(result, indent=2, default=str)
     elif isinstance(result, list):
         text = json.dumps(result, indent=2, default=str)
     else:
         text = str(result)
-    return [TextContent(type="text", text=text)]
+    return CallToolResult(
+        content=[TextContent(type="text", text=text)],
+        isError=False,
+    )
 
 
-def _format_error(error: Exception) -> list[TextContent]:
-    """Format error as MCP TextContent."""
-    return [TextContent(type="text", text=f"Error: {error}")]
+def _format_error(error: Exception) -> CallToolResult:
+    """Format error as MCP CallToolResult with isError=True."""
+    return CallToolResult(
+        content=[TextContent(type="text", text=f"Error: {error}")],
+        isError=True,
+    )
 
 
 # =============================================================================
@@ -922,7 +943,7 @@ def get_tools() -> list[Tool]:
 # Tool Handlers
 # =============================================================================
 
-async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+async def handle_tool(name: str, arguments: dict[str, Any]) -> CallToolResult:
     """
     Handle tool invocation.
 
@@ -931,7 +952,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
         arguments: Tool arguments
 
     Returns:
-        List of TextContent with result
+        CallToolResult with content and isError flag
     """
     global _current_template
 
@@ -1293,7 +1314,8 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             sg = await _get_siggen(host, port)
             try:
                 cal_date = await sg.scpi_query("CALibration:DATE?")
-            except Exception:
+            except (CommunicationError, TimeoutError) as e:
+                logger.debug("Could not query calibration date: %s", e)
                 cal_date = "unknown"
             return _format_result({
                 "last_calibration_date": cal_date.strip(),
@@ -1416,86 +1438,122 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             freq = arguments.get("frequency_hz")
             power = arguments.get("power_dbm")
 
-            if template_name == "cw_1ghz":
-                _current_template = CWSignalTemplate.at_frequency(1e9)
-            elif template_name == "cw_wifi_24ghz":
-                _current_template = CWSignalTemplate.wifi_24ghz_carrier()
-            elif template_name == "cw_wifi_5ghz":
-                _current_template = CWSignalTemplate.wifi_5ghz_carrier()
-            elif template_name == "cw_lte_band1":
-                _current_template = CWSignalTemplate.lte_band_1()
-            elif template_name == "cw_ism_915mhz":
-                _current_template = CWSignalTemplate.ism_915mhz()
-            elif template_name.startswith("iec_61000_4_3"):
-                level = 3
-                if "level1" in template_name:
-                    level = 1
-                elif "level2" in template_name:
-                    level = 2
-                elif "level4" in template_name:
-                    level = 4
-                _current_template = ImmunityTestTemplate.iec_61000_4_3(level)
-            elif template_name == "iso_11452_2":
-                _current_template = ImmunityTestTemplate.iso_11452_2()
-            elif template_name == "lte_band1_10mhz":
-                _current_template = LTEDownlinkTemplate.band_1_10mhz()
-            elif template_name == "lte_band7_20mhz":
-                _current_template = LTEDownlinkTemplate.band_7_20mhz()
-            elif template_name == "nr5g_n78_100mhz":
-                _current_template = NR5GTemplate.n78_100mhz()
-            elif template_name == "nr5g_n41_50mhz":
-                _current_template = NR5GTemplate.n41_50mhz()
-            elif template_name == "wlan_wifi6_80mhz":
-                _current_template = WLANTemplate.wifi6_80mhz()
-            elif template_name == "wlan_wifi6e_160mhz":
-                _current_template = WLANTemplate.wifi6e_160mhz()
-            elif template_name == "two_tone_1mhz":
-                _current_template = TwoToneTemplate.standard_1mhz_spacing()
-            elif template_name == "two_tone_10mhz":
-                _current_template = TwoToneTemplate.standard_10mhz_spacing()
-            elif freq is not None:
-                _current_template = CWSignalTemplate.at_frequency(
-                    freq, power or -10.0
-                )
-            elif template_name.endswith(".json"):
-                safe_template_path = validate_safe_path(
-                    template_name, _state_manager.state_directory
-                )
-                _current_template = SignalTemplate.load(safe_template_path)
-            else:
-                return _format_error(ValueError(f"Unknown template: {template_name}"))
+            async with _template_lock:
+                if template_name == "cw_1ghz":
+                    _current_template = CWSignalTemplate.at_frequency(1e9)
+                elif template_name == "cw_wifi_24ghz":
+                    _current_template = CWSignalTemplate.wifi_24ghz_carrier()
+                elif template_name == "cw_wifi_5ghz":
+                    _current_template = CWSignalTemplate.wifi_5ghz_carrier()
+                elif template_name == "cw_lte_band1":
+                    _current_template = CWSignalTemplate.lte_band_1()
+                elif template_name == "cw_ism_915mhz":
+                    _current_template = CWSignalTemplate.ism_915mhz()
+                elif template_name.startswith("iec_61000_4_3"):
+                    level = 3
+                    if "level1" in template_name:
+                        level = 1
+                    elif "level2" in template_name:
+                        level = 2
+                    elif "level4" in template_name:
+                        level = 4
+                    _current_template = ImmunityTestTemplate.iec_61000_4_3(level)
+                elif template_name == "iso_11452_2":
+                    _current_template = ImmunityTestTemplate.iso_11452_2()
+                elif template_name == "lte_band1_10mhz":
+                    _current_template = LTEDownlinkTemplate.band_1_10mhz()
+                elif template_name == "lte_band7_20mhz":
+                    _current_template = LTEDownlinkTemplate.band_7_20mhz()
+                elif template_name == "nr5g_n78_100mhz":
+                    _current_template = NR5GTemplate.n78_100mhz()
+                elif template_name == "nr5g_n41_50mhz":
+                    _current_template = NR5GTemplate.n41_50mhz()
+                elif template_name == "wlan_wifi6_80mhz":
+                    _current_template = WLANTemplate.wifi6_80mhz()
+                elif template_name == "wlan_wifi6e_160mhz":
+                    _current_template = WLANTemplate.wifi6e_160mhz()
+                elif template_name == "two_tone_1mhz":
+                    _current_template = TwoToneTemplate.standard_1mhz_spacing()
+                elif template_name == "two_tone_10mhz":
+                    _current_template = TwoToneTemplate.standard_10mhz_spacing()
+                elif freq is not None:
+                    _current_template = CWSignalTemplate.at_frequency(
+                        freq, power or -10.0
+                    )
+                elif template_name.endswith(".json"):
+                    safe_template_path = validate_safe_path(
+                        template_name, _state_manager.state_directory
+                    )
+                    _current_template = SignalTemplate.load(safe_template_path)
+                else:
+                    return _format_error(ValueError(f"Unknown template: {template_name}"))
 
-            if power is not None and _current_template is not None:
-                _current_template.power_dbm = power
+                if power is not None and _current_template is not None:
+                    _current_template.power_dbm = power
 
-            return _format_result({
-                "status": "template_loaded",
-                "template": _current_template.get_summary() if _current_template else None,
-            })
+                return _format_result({
+                    "status": "template_loaded",
+                    "template": _current_template.get_summary() if _current_template else None,
+                })
         elif name == "siggen_apply_template":
-            if _current_template is None:
-                return _format_error(
-                    ValueError("No template loaded. Use siggen_load_template first.")
-                )
-            sg = await _get_siggen(host, port)
-            await sg.set_frequency(_current_template.frequency_hz)
-            await sg.set_power(_current_template.power_dbm)
+            async with _template_lock:
+                if _current_template is None:
+                    return _format_error(
+                        ValueError("No template loaded. Use siggen_load_template first.")
+                    )
+                # Copy template reference while holding lock
+                template = _current_template
 
-            # Apply modulation if specified
-            mod = _current_template.modulation_config
+            sg = await _get_siggen(host, port)
+            await sg.set_frequency(template.frequency_hz)
+            await sg.set_power(template.power_dbm)
+
+            # Apply modulation settings (Issue #15: complete all modulation types)
+            # Pattern follows state.py restore_state()
+            mod = template.modulation_config
+
+            # AM modulation
             if mod.get("am_enabled"):
                 await sg.configure_am(mod.get("am_depth_percent", 80.0), enable=True)
             else:
                 await sg.scpi_send("SOURce1:AM:STATe OFF")
 
-            if _current_template.output_enabled:
+            # FM modulation
+            if mod.get("fm_enabled"):
+                await sg.configure_fm(mod.get("fm_deviation_hz", 75000.0), enable=True)
+            else:
+                await sg.scpi_send("SOURce1:FM:STATe OFF")
+
+            # PM modulation
+            if mod.get("pm_enabled"):
+                await sg.configure_pm(mod.get("pm_deviation_rad", 1.0), enable=True)
+            else:
+                await sg.scpi_send("SOURce1:PM:STATe OFF")
+
+            # Pulse modulation
+            if mod.get("pulse_enabled"):
+                await sg.configure_pulse(
+                    mod.get("pulse_width_s", 1e-6),
+                    mod.get("pulse_period_s"),
+                    enable=True,
+                )
+            else:
+                await sg.scpi_send("SOURce1:PULM:STATe OFF")
+
+            # IQ modulation
+            if mod.get("iq_enabled"):
+                await sg.iq_on()
+            else:
+                await sg.scpi_send("SOURce:IQ:STATe OFF")
+
+            if template.output_enabled:
                 await sg.output_on()
 
             return _format_result({
                 "status": "template_applied",
-                "template": _current_template.name,
-                "frequency_hz": _current_template.frequency_hz,
-                "power_dbm": _current_template.power_dbm,
+                "template": template.name,
+                "frequency_hz": template.frequency_hz,
+                "power_dbm": template.power_dbm,
             })
 
         # =================================================================
@@ -1503,13 +1561,14 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
         # =================================================================
         elif name == "siggen_save_state":
             sg = await _get_siggen(host, port)
-            safe_path = validate_safe_path(
-                arguments["filepath"], _state_manager.state_directory
-            )
-            state = await _state_manager.capture_state(sg)
-            if arguments.get("notes"):
-                state.notes = arguments["notes"]
-            state.save(safe_path)
+            async with _state_lock:
+                safe_path = validate_safe_path(
+                    arguments["filepath"], _state_manager.state_directory
+                )
+                state = await _state_manager.capture_state(sg)
+                if arguments.get("notes"):
+                    state.notes = arguments["notes"]
+                state.save(safe_path)
             return _format_result({
                 "status": "state_saved",
                 "filepath": str(safe_path),
@@ -1517,11 +1576,12 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             })
         elif name == "siggen_load_state":
             sg = await _get_siggen(host, port)
-            safe_path = validate_safe_path(
-                arguments["filepath"], _state_manager.state_directory
-            )
-            state = InstrumentState.load(safe_path)
-            await _state_manager.restore_state(sg, state)
+            async with _state_lock:
+                safe_path = validate_safe_path(
+                    arguments["filepath"], _state_manager.state_directory
+                )
+                state = InstrumentState.load(safe_path)
+                await _state_manager.restore_state(sg, state)
             return _format_result({
                 "status": "state_restored",
                 "filepath": str(safe_path),
@@ -1535,15 +1595,36 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
         else:
             return _format_error(ValueError(f"Unknown tool: {name}"))
 
+    except ConnectionError as e:
+        logger.error("Connection error in %s: %s", name, e)
+        return _format_error(e)
+    except TimeoutError as e:
+        logger.error("Timeout error in %s: %s", name, e)
+        return _format_error(e)
+    except CommunicationError as e:
+        logger.error("Communication error in %s: %s", name, e)
+        return _format_error(e)
+    except ConfigurationError as e:
+        logger.error("Configuration error in %s: %s", name, e)
+        return _format_error(e)
+    except SafetyError as e:
+        logger.error("Safety error in %s: %s", name, e)
+        return _format_error(e)
     except SignalGeneratorError as e:
-        logger.error(f"Signal generator error in {name}: {e}")
+        logger.error("Signal generator error in %s: %s", name, e)
         return _format_error(e)
-    except Exception as e:
-        logger.error(f"Unexpected error in {name}: {e}")
+    except ValueError as e:
+        logger.warning("Validation error in %s: %s", name, e)
+        return _format_error(e)
+    except (KeyError, TypeError) as e:
+        logger.error("Invalid arguments for %s: %s", name, e)
+        return _format_error(e)
+    except OSError as e:
+        logger.error("I/O error in %s: %s", name, e)
         return _format_error(e)
 
 
-async def _handle_discover(arguments: dict[str, Any]) -> list[TextContent]:
+async def _handle_discover(arguments: dict[str, Any]) -> CallToolResult:
     """Handle signal generator discovery."""
     settings = get_settings()
     host = arguments.get("host", settings.default_host)
@@ -1577,7 +1658,11 @@ async def _handle_discover(arguments: dict[str, Any]) -> list[TextContent]:
                     "instrument": info.to_dict(),
                 })
 
-        except Exception:
+        except (asyncio.TimeoutError, OSError) as e:
+            logger.debug("Discovery: port %d not responding: %s", port, e)
+            continue
+        except (UnicodeDecodeError, ValueError) as e:
+            logger.debug("Discovery: port %d returned invalid data: %s", port, e)
             continue
 
     return _format_result({

@@ -105,8 +105,8 @@ class RSSignalGeneratorDriver:
         if self._rf_output_on:
             try:
                 await self.output_off()
-            except Exception:
-                pass
+            except OSError as e:
+                logger.warning("Failed to turn off RF output before disconnect: %s", e)
         await self._scpi.disconnect()
 
     async def identify(self) -> InstrumentInfo:
