@@ -1,0 +1,471 @@
+"""High-level driver for R&S signal generators."""
+
+import logging
+from typing import Any
+
+from ..exceptions import ConfigurationError
+from ..models.siggen_types import InstrumentInfo, SignalGeneratorFamily
+from ..safety.validators import SafetyLimits, SafetyValidator
+from .scpi_socket import SCPISocket
+
+logger = logging.getLogger(__name__)
+
+
+class RSSignalGeneratorDriver:
+    """
+    High-level async driver for Rohde & Schwarz signal generators.
+
+    Provides validated, instrument-aware access to signal generator functions
+    via SCPI over TCP/IP.
+
+    Supported models: SMW200A, SMBV100B, SMM100A, SMCV100B, SGT100A, SGS100A,
+    SMA100B, SMB100B.
+
+    Example:
+        driver = RSSignalGeneratorDriver(host="192.168.1.100")
+        await driver.connect()
+        await driver.set_frequency(1e9)
+        await driver.set_power(-10)
+        await driver.output_on()
+    """
+
+    def __init__(
+        self,
+        host: str = "192.168.1.100",
+        port: int = 5025,
+        timeout: float = 5.0,
+        command_timeout: float = 30.0,
+        safety_limits: SafetyLimits | None = None,
+    ):
+        """
+        Initialize signal generator driver.
+
+        Args:
+            host: Instrument IP address
+            port: SCPI TCP port (default 5025)
+            timeout: Connection timeout
+            command_timeout: Command timeout
+            safety_limits: Safety limits for validation
+        """
+        self._scpi = SCPISocket(
+            host=host,
+            port=port,
+            timeout=timeout,
+            command_timeout=command_timeout,
+        )
+        self._safety = SafetyValidator(safety_limits)
+        self._info: InstrumentInfo | None = None
+        self._rf_output_on = False
+        self._frequency_hz: float | None = None
+        self._power_dbm: float | None = None
+
+    @property
+    def is_connected(self) -> bool:
+        """Check if connected to signal generator."""
+        return self._scpi.is_connected
+
+    @property
+    def address(self) -> str:
+        """Get connection address."""
+        return self._scpi.address
+
+    @property
+    def info(self) -> InstrumentInfo | None:
+        """Get instrument info (available after connect)."""
+        return self._info
+
+    @property
+    def family(self) -> SignalGeneratorFamily:
+        """Get instrument family."""
+        if self._info:
+            return self._info.family
+        return SignalGeneratorFamily.UNKNOWN
+
+    async def connect(self) -> InstrumentInfo:
+        """
+        Connect to signal generator and identify it.
+
+        Returns:
+            InstrumentInfo with instrument details
+
+        Raises:
+            ConnectionError: If connection fails
+        """
+        await self._scpi.connect()
+        self._info = await self.identify()
+        logger.info(
+            f"Connected to {self._info.manufacturer} {self._info.model} "
+            f"({self._info.family.value})"
+        )
+        return self._info
+
+    async def disconnect(self) -> None:
+        """Disconnect from signal generator."""
+        # Turn off RF output for safety before disconnecting
+        if self._rf_output_on:
+            try:
+                await self.output_off()
+            except Exception:
+                pass
+        await self._scpi.disconnect()
+
+    async def identify(self) -> InstrumentInfo:
+        """
+        Query instrument identification.
+
+        Returns:
+            InstrumentInfo parsed from *IDN? response
+        """
+        idn = await self._scpi.query("*IDN?")
+        info = InstrumentInfo.from_idn(idn)
+        self._info = info
+        return info
+
+    async def reset(self) -> None:
+        """Reset instrument to default state (*RST)."""
+        await self._scpi.send("*RST")
+        await self._scpi.wait_opc()
+        self._rf_output_on = False
+        self._frequency_hz = None
+        self._power_dbm = None
+        logger.info("Instrument reset")
+
+    async def preset(self) -> None:
+        """Preset instrument (SYSTem:PRESet)."""
+        await self._scpi.send("SYSTem:PRESet")
+        await self._scpi.wait_opc()
+        self._rf_output_on = False
+        self._frequency_hz = None
+        self._power_dbm = None
+        logger.info("Instrument preset")
+
+    async def get_errors(self) -> list[str]:
+        """
+        Query and return all instrument errors.
+
+        Returns:
+            List of error strings. Empty list if no errors.
+        """
+        errors = []
+        while True:
+            response = await self._scpi.query("SYSTem:ERRor?")
+            # R&S format: <code>,\"<message>\"
+            if response.startswith("0,") or response.startswith("+0,"):
+                break
+            errors.append(response)
+        return errors
+
+    # =========================================================================
+    # RF Output Control
+    # =========================================================================
+
+    async def set_frequency(self, frequency_hz: float) -> None:
+        """
+        Set CW output frequency.
+
+        Args:
+            frequency_hz: Frequency in Hz
+
+        Raises:
+            SafetyError: If frequency exceeds limits
+        """
+        self._safety.validate_frequency(frequency_hz)
+        await self._scpi.send(f"SOURce1:FREQuency:CW {frequency_hz}")
+        self._frequency_hz = frequency_hz
+        logger.info(f"Frequency set to {frequency_hz/1e6:.6f} MHz")
+
+    async def get_frequency(self) -> float:
+        """
+        Query current CW frequency.
+
+        Returns:
+            Frequency in Hz
+        """
+        response = await self._scpi.query("SOURce1:FREQuency:CW?")
+        freq = float(response)
+        self._frequency_hz = freq
+        return freq
+
+    async def set_power(self, power_dbm: float) -> None:
+        """
+        Set output power level.
+
+        Args:
+            power_dbm: Power level in dBm
+
+        Raises:
+            SafetyError: If power exceeds limits
+        """
+        self._safety.validate_power(power_dbm)
+        await self._scpi.send(f"SOURce1:POWer:LEVel:IMMediate:AMPLitude {power_dbm}")
+        self._power_dbm = power_dbm
+        logger.info(f"Power set to {power_dbm} dBm")
+
+    async def get_power(self) -> float:
+        """
+        Query current output power.
+
+        Returns:
+            Power in dBm
+        """
+        response = await self._scpi.query("SOURce1:POWer?")
+        power = float(response)
+        self._power_dbm = power
+        return power
+
+    async def output_on(self) -> None:
+        """Enable RF output."""
+        await self._scpi.send("OUTPut1:STATe ON")
+        self._rf_output_on = True
+        logger.info("RF output ON")
+
+    async def output_off(self) -> None:
+        """Disable RF output (safe state)."""
+        await self._scpi.send("OUTPut1:STATe OFF")
+        self._rf_output_on = False
+        logger.info("RF output OFF")
+
+    async def get_output_state(self) -> bool:
+        """
+        Query RF output state.
+
+        Returns:
+            True if output is enabled
+        """
+        response = await self._scpi.query("OUTPut1:STATe?")
+        state = response.strip() in ("1", "ON")
+        self._rf_output_on = state
+        return state
+
+    async def set_phase(self, phase_deg: float) -> None:
+        """
+        Set RF phase offset.
+
+        Args:
+            phase_deg: Phase in degrees
+        """
+        await self._scpi.send(f"SOURce1:PHASe {phase_deg}")
+        logger.info(f"Phase set to {phase_deg} deg")
+
+    # =========================================================================
+    # Analog Modulation
+    # =========================================================================
+
+    async def configure_am(self, depth_percent: float, enable: bool = True) -> None:
+        """
+        Configure amplitude modulation.
+
+        Args:
+            depth_percent: Modulation depth in percent (0-100)
+            enable: Enable AM modulation
+        """
+        self._safety.validate_modulation_depth(depth_percent)
+        await self._scpi.send(f"SOURce1:AM:DEPTh {depth_percent}")
+        await self._scpi.send(f"SOURce1:AM:STATe {'ON' if enable else 'OFF'}")
+        logger.info(f"AM: depth={depth_percent}%, enabled={enable}")
+
+    async def configure_fm(self, deviation_hz: float, enable: bool = True) -> None:
+        """
+        Configure frequency modulation.
+
+        Args:
+            deviation_hz: FM deviation in Hz
+            enable: Enable FM modulation
+        """
+        self._safety.validate_deviation(deviation_hz)
+        await self._scpi.send(f"SOURce1:FM:DEViation {deviation_hz}")
+        await self._scpi.send(f"SOURce1:FM:STATe {'ON' if enable else 'OFF'}")
+        logger.info(f"FM: deviation={deviation_hz/1e3:.3f} kHz, enabled={enable}")
+
+    async def configure_pm(self, deviation_rad: float, enable: bool = True) -> None:
+        """
+        Configure phase modulation.
+
+        Args:
+            deviation_rad: PM deviation in radians
+            enable: Enable PM modulation
+        """
+        if deviation_rad < 0:
+            raise ValueError(f"PM deviation {deviation_rad} rad must be positive")
+        await self._scpi.send(f"SOURce1:PM:DEViation {deviation_rad}")
+        await self._scpi.send(f"SOURce1:PM:STATe {'ON' if enable else 'OFF'}")
+        logger.info(f"PM: deviation={deviation_rad} rad, enabled={enable}")
+
+    async def configure_pulse(
+        self,
+        width_s: float,
+        period_s: float | None = None,
+        enable: bool = True,
+    ) -> None:
+        """
+        Configure pulse modulation.
+
+        Args:
+            width_s: Pulse width in seconds
+            period_s: Pulse period in seconds
+            enable: Enable pulse modulation
+        """
+        self._safety.validate_pulse_width(width_s, period_s)
+        await self._scpi.send(f"SOURce1:PULM:WIDTh {width_s}")
+        if period_s is not None:
+            await self._scpi.send(f"SOURce1:PULM:PERiod {period_s}")
+        await self._scpi.send(f"SOURce1:PULM:STATe {'ON' if enable else 'OFF'}")
+        logger.info(f"Pulse: width={width_s*1e6:.1f} us, enabled={enable}")
+
+    async def modulation_all_off(self) -> None:
+        """Turn off all modulations."""
+        await self._scpi.send("SOURce:MODulation:ALL:STATe OFF")
+        logger.info("All modulations OFF")
+
+    # =========================================================================
+    # IQ Modulation
+    # =========================================================================
+
+    async def iq_on(self) -> None:
+        """Enable IQ modulation."""
+        if self._info and not self._info.family.has_iq_modulation:
+            raise ConfigurationError(
+                f"{self._info.model} does not support IQ modulation",
+                self.address,
+            )
+        await self._scpi.send("SOURce:IQ:STATe ON")
+        logger.info("IQ modulation ON")
+
+    async def iq_off(self) -> None:
+        """Disable IQ modulation."""
+        await self._scpi.send("SOURce:IQ:STATe OFF")
+        logger.info("IQ modulation OFF")
+
+    # =========================================================================
+    # ARB Waveform Generator
+    # =========================================================================
+
+    async def load_waveform(self, waveform_path: str) -> None:
+        """
+        Load ARB waveform file.
+
+        Args:
+            waveform_path: Path to waveform file on the instrument
+        """
+        if self._info and not self._info.family.has_arb_generator:
+            raise ConfigurationError(
+                f"{self._info.model} does not have an ARB generator",
+                self.address,
+            )
+        await self._scpi.send(f"SOURce1:BB:ARBitrary:WAVeform:SELect '{waveform_path}'")
+        await self._scpi.wait_opc()
+        logger.info(f"Waveform loaded: {waveform_path}")
+
+    async def arb_on(self) -> None:
+        """Enable ARB generator."""
+        if self._info and not self._info.family.has_arb_generator:
+            raise ConfigurationError(
+                f"{self._info.model} does not have an ARB generator",
+                self.address,
+            )
+        await self._scpi.send("SOURce1:BB:ARBitrary:STATe ON")
+        logger.info("ARB generator ON")
+
+    async def arb_off(self) -> None:
+        """Disable ARB generator."""
+        await self._scpi.send("SOURce1:BB:ARBitrary:STATe OFF")
+        logger.info("ARB generator OFF")
+
+    # =========================================================================
+    # Reference Oscillator
+    # =========================================================================
+
+    async def set_reference_source(self, source: str) -> None:
+        """
+        Set reference oscillator source.
+
+        Args:
+            source: "INTernal" or "EXTernal"
+        """
+        source_upper = source.upper()
+        if source_upper not in ("INTERNAL", "EXTERNAL", "INT", "EXT"):
+            raise ValueError(f"Invalid reference source: {source}. Use INTernal or EXTernal.")
+        # Normalize to R&S format
+        if source_upper in ("INT", "INTERNAL"):
+            scpi_val = "INTernal"
+        else:
+            scpi_val = "EXTernal"
+        await self._scpi.send(f"SOURce1:ROSCillator:SOURce {scpi_val}")
+        logger.info(f"Reference source set to {scpi_val}")
+
+    async def get_reference_source(self) -> str:
+        """
+        Query reference oscillator source.
+
+        Returns:
+            Reference source string
+        """
+        return await self._scpi.query("SOURce1:ROSCillator:SOURce?")
+
+    # =========================================================================
+    # Calibration
+    # =========================================================================
+
+    async def run_calibration(self) -> str:
+        """
+        Run internal calibration.
+
+        Returns:
+            Calibration result string
+        """
+        result = await self._scpi.query("CALibration:ALL?", timeout=120.0)
+        logger.info(f"Calibration result: {result}")
+        return result
+
+    # =========================================================================
+    # Raw SCPI Access
+    # =========================================================================
+
+    async def scpi_send(self, command: str) -> None:
+        """
+        Send raw SCPI command.
+
+        Args:
+            command: SCPI command string
+        """
+        await self._scpi.send(command)
+
+    async def scpi_query(self, command: str) -> str:
+        """
+        Send raw SCPI query and return response.
+
+        Args:
+            command: SCPI query string
+
+        Returns:
+            Response string
+        """
+        return await self._scpi.query(command)
+
+    # =========================================================================
+    # Status
+    # =========================================================================
+
+    def get_status(self) -> dict[str, Any]:
+        """
+        Get instrument connection and configuration status.
+
+        Returns:
+            Dictionary with status information
+        """
+        status: dict[str, Any] = {
+            "connected": self.is_connected,
+            "address": self.address,
+            "rf_output_on": self._rf_output_on,
+        }
+
+        if self._info:
+            status["instrument"] = self._info.to_dict()
+
+        if self._frequency_hz is not None:
+            status["frequency_hz"] = self._frequency_hz
+
+        if self._power_dbm is not None:
+            status["power_dbm"] = self._power_dbm
+
+        return status

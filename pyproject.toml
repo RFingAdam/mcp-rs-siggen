@@ -1,0 +1,75 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rs-siggen-mcp"
+version = "0.1.0"
+description = "MCP server for Rohde & Schwarz signal generator automation via TCP/IP SCPI"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [
+    { name = "Adam Engelbrecht", email = "adam@rfingadam.com" }
+]
+keywords = [
+    "mcp",
+    "signal-generator",
+    "rohde-schwarz",
+    "scpi",
+    "test-automation",
+    "rf-testing",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+]
+dependencies = [
+    "mcp>=1.0.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+]
+
+[project.scripts]
+rs-siggen-mcp = "rs_siggen_mcp.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/RFingAdam/mcp-rs-siggen"
+Repository = "https://github.com/RFingAdam/mcp-rs-siggen"
+Issues = "https://github.com/RFingAdam/mcp-rs-siggen/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rs_siggen_mcp"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true

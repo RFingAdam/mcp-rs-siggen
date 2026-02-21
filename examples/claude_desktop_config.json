@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "rs-siggen": {
+      "command": "rs-siggen-mcp",
+      "env": {
+        "SIGGEN_DEFAULT_HOST": "192.168.1.100",
+        "SIGGEN_DEFAULT_PORT": "5025",
+        "SIGGEN_MAX_POWER_DBM": "10",
+        "SIGGEN_LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
