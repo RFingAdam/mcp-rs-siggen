@@ -224,8 +224,8 @@ class TestRawScpiGuard:
         """Test that raw SCPI send returns error when disabled."""
         from rs_siggen_mcp.tools import handle_tool
 
-        with patch("rs_siggen_mcp.tools.get_settings") as mock_settings, \
-             patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen):
+        with patch("rs_siggen_mcp.tools._common.get_settings") as mock_settings, \
+             patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen):
             settings = MagicMock()
             settings.allow_raw_scpi = False
             settings.default_host = "192.168.1.100"
@@ -235,15 +235,16 @@ class TestRawScpiGuard:
             result = await handle_tool("siggen_scpi_send", {"command": "*RST"})
             assert len(result.content) == 1
             assert result.isError is True
-            assert "disabled" in result.content[0].text.lower() or "SIGGEN_ALLOW_RAW_SCPI" in result.content[0].text
+            text = result.content[0].text
+            assert "disabled" in text.lower() or "SIGGEN_ALLOW_RAW_SCPI" in text
 
     @pytest.mark.asyncio
     async def test_raw_scpi_query_blocked_when_disabled(self, mock_siggen):
         """Test that raw SCPI query returns error when disabled."""
         from rs_siggen_mcp.tools import handle_tool
 
-        with patch("rs_siggen_mcp.tools.get_settings") as mock_settings, \
-             patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen):
+        with patch("rs_siggen_mcp.tools._common.get_settings") as mock_settings, \
+             patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen):
             settings = MagicMock()
             settings.allow_raw_scpi = False
             settings.default_host = "192.168.1.100"
@@ -253,15 +254,16 @@ class TestRawScpiGuard:
             result = await handle_tool("siggen_scpi_query", {"command": "*IDN?"})
             assert len(result.content) == 1
             assert result.isError is True
-            assert "disabled" in result.content[0].text.lower() or "SIGGEN_ALLOW_RAW_SCPI" in result.content[0].text
+            text = result.content[0].text
+            assert "disabled" in text.lower() or "SIGGEN_ALLOW_RAW_SCPI" in text
 
     @pytest.mark.asyncio
     async def test_raw_scpi_send_allowed_when_enabled(self, mock_siggen):
         """Test that raw SCPI send works when enabled."""
         from rs_siggen_mcp.tools import handle_tool
 
-        with patch("rs_siggen_mcp.tools.get_settings") as mock_settings, \
-             patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen):
+        with patch("rs_siggen_mcp.tools._common.get_settings") as mock_settings, \
+             patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen):
             settings = MagicMock()
             settings.allow_raw_scpi = True
             settings.default_host = "192.168.1.100"
@@ -279,8 +281,8 @@ class TestRawScpiGuard:
         from rs_siggen_mcp.tools import handle_tool
 
         mock_siggen.scpi_query.return_value = "Rohde&Schwarz,SMW200A,123,4.30"
-        with patch("rs_siggen_mcp.tools.get_settings") as mock_settings, \
-             patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen):
+        with patch("rs_siggen_mcp.tools._common.get_settings") as mock_settings, \
+             patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen):
             settings = MagicMock()
             settings.allow_raw_scpi = True
             settings.default_host = "192.168.1.100"
@@ -297,8 +299,8 @@ class TestRawScpiGuard:
         """Test that raw SCPI send logs a WARNING."""
         from rs_siggen_mcp.tools import handle_tool
 
-        with patch("rs_siggen_mcp.tools.get_settings") as mock_settings, \
-             patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen), \
+        with patch("rs_siggen_mcp.tools._common.get_settings") as mock_settings, \
+             patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen), \
              caplog.at_level(logging.WARNING, logger="rs_siggen_mcp.tools"):
             settings = MagicMock()
             settings.allow_raw_scpi = True
@@ -319,8 +321,8 @@ class TestRawScpiGuard:
         from rs_siggen_mcp.tools import handle_tool
 
         mock_siggen.scpi_query.return_value = "response"
-        with patch("rs_siggen_mcp.tools.get_settings") as mock_settings, \
-             patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen), \
+        with patch("rs_siggen_mcp.tools._common.get_settings") as mock_settings, \
+             patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen), \
              caplog.at_level(logging.WARNING, logger="rs_siggen_mcp.tools"):
             settings = MagicMock()
             settings.allow_raw_scpi = True
@@ -385,8 +387,8 @@ class TestScpiSanitizationInTools:
         """Test that SCPI injection in directory param is blocked."""
         from rs_siggen_mcp.tools import handle_tool
 
-        with patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen), \
-             patch("rs_siggen_mcp.tools.get_settings") as mock_settings:
+        with patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen), \
+             patch("rs_siggen_mcp.tools._common.get_settings") as mock_settings:
             settings = MagicMock()
             settings.default_host = "192.168.1.100"
             settings.default_port = 5025
@@ -399,15 +401,16 @@ class TestScpiSanitizationInTools:
             # Should return error due to semicolon
             assert len(result.content) == 1
             assert result.isError is True
-            assert "error" in result.content[0].text.lower() or "injection" in result.content[0].text.lower()
+            text = result.content[0].text.lower()
+            assert "error" in text or "injection" in text
 
     @pytest.mark.asyncio
     async def test_configure_bluetooth_injection_blocked(self, mock_siggen):
         """Test that SCPI injection in bluetooth mode is blocked."""
         from rs_siggen_mcp.tools import handle_tool
 
-        with patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen), \
-             patch("rs_siggen_mcp.tools.get_settings") as mock_settings:
+        with patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen), \
+             patch("rs_siggen_mcp.tools._common.get_settings") as mock_settings:
             settings = MagicMock()
             settings.default_host = "192.168.1.100"
             settings.default_port = 5025
@@ -419,15 +422,16 @@ class TestScpiSanitizationInTools:
             )
             assert len(result.content) == 1
             assert result.isError is True
-            assert "error" in result.content[0].text.lower() or "injection" in result.content[0].text.lower()
+            text = result.content[0].text.lower()
+            assert "error" in text or "injection" in text
 
     @pytest.mark.asyncio
     async def test_configure_lte_duplex_injection_blocked(self, mock_siggen):
         """Test that SCPI injection in LTE duplex_mode is blocked."""
         from rs_siggen_mcp.tools import handle_tool
 
-        with patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen), \
-             patch("rs_siggen_mcp.tools.get_settings") as mock_settings:
+        with patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen), \
+             patch("rs_siggen_mcp.tools._common.get_settings") as mock_settings:
             settings = MagicMock()
             settings.default_host = "192.168.1.100"
             settings.default_port = 5025
@@ -439,7 +443,8 @@ class TestScpiSanitizationInTools:
             )
             assert len(result.content) == 1
             assert result.isError is True
-            assert "error" in result.content[0].text.lower() or "injection" in result.content[0].text.lower()
+            text = result.content[0].text.lower()
+            assert "error" in text or "injection" in text
 
 
 class TestPathValidationInTools:
@@ -460,8 +465,8 @@ class TestPathValidationInTools:
         """Test that path traversal in save_state filepath is blocked."""
         from rs_siggen_mcp.tools import handle_tool
 
-        with patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen), \
-             patch("rs_siggen_mcp.tools.get_settings") as mock_settings:
+        with patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen), \
+             patch("rs_siggen_mcp.tools._common.get_settings") as mock_settings:
             settings = MagicMock()
             settings.default_host = "192.168.1.100"
             settings.default_port = 5025
@@ -473,15 +478,16 @@ class TestPathValidationInTools:
             )
             assert len(result.content) == 1
             assert result.isError is True
-            assert "error" in result.content[0].text.lower() or "traversal" in result.content[0].text.lower()
+            text = result.content[0].text.lower()
+            assert "error" in text or "traversal" in text
 
     @pytest.mark.asyncio
     async def test_load_state_traversal_blocked(self, mock_siggen):
         """Test that path traversal in load_state filepath is blocked."""
         from rs_siggen_mcp.tools import handle_tool
 
-        with patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen), \
-             patch("rs_siggen_mcp.tools.get_settings") as mock_settings:
+        with patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen), \
+             patch("rs_siggen_mcp.tools._common.get_settings") as mock_settings:
             settings = MagicMock()
             settings.default_host = "192.168.1.100"
             settings.default_port = 5025
@@ -493,7 +499,8 @@ class TestPathValidationInTools:
             )
             assert len(result.content) == 1
             assert result.isError is True
-            assert "error" in result.content[0].text.lower() or "traversal" in result.content[0].text.lower()
+            text = result.content[0].text.lower()
+            assert "error" in text or "traversal" in text
 
 
 class TestDriverSanitization:
