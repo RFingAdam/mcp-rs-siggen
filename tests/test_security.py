@@ -233,8 +233,9 @@ class TestRawScpiGuard:
             mock_settings.return_value = settings
 
             result = await handle_tool("siggen_scpi_send", {"command": "*RST"})
-            assert len(result) == 1
-            assert "disabled" in result[0].text.lower() or "SIGGEN_ALLOW_RAW_SCPI" in result[0].text
+            assert len(result.content) == 1
+            assert result.isError is True
+            assert "disabled" in result.content[0].text.lower() or "SIGGEN_ALLOW_RAW_SCPI" in result.content[0].text
 
     @pytest.mark.asyncio
     async def test_raw_scpi_query_blocked_when_disabled(self, mock_siggen):
@@ -250,8 +251,9 @@ class TestRawScpiGuard:
             mock_settings.return_value = settings
 
             result = await handle_tool("siggen_scpi_query", {"command": "*IDN?"})
-            assert len(result) == 1
-            assert "disabled" in result[0].text.lower() or "SIGGEN_ALLOW_RAW_SCPI" in result[0].text
+            assert len(result.content) == 1
+            assert result.isError is True
+            assert "disabled" in result.content[0].text.lower() or "SIGGEN_ALLOW_RAW_SCPI" in result.content[0].text
 
     @pytest.mark.asyncio
     async def test_raw_scpi_send_allowed_when_enabled(self, mock_siggen):
@@ -267,8 +269,9 @@ class TestRawScpiGuard:
             mock_settings.return_value = settings
 
             result = await handle_tool("siggen_scpi_send", {"command": "SOURce1:FREQuency 1e9"})
-            assert len(result) == 1
-            assert "sent" in result[0].text.lower()
+            assert len(result.content) == 1
+            assert result.isError is False
+            assert "sent" in result.content[0].text.lower()
 
     @pytest.mark.asyncio
     async def test_raw_scpi_query_allowed_when_enabled(self, mock_siggen):
@@ -285,8 +288,9 @@ class TestRawScpiGuard:
             mock_settings.return_value = settings
 
             result = await handle_tool("siggen_scpi_query", {"command": "*IDN?"})
-            assert len(result) == 1
-            assert "response" in result[0].text.lower()
+            assert len(result.content) == 1
+            assert result.isError is False
+            assert "response" in result.content[0].text.lower()
 
     @pytest.mark.asyncio
     async def test_raw_scpi_send_logs_warning(self, mock_siggen, caplog):
@@ -393,8 +397,9 @@ class TestScpiSanitizationInTools:
                 {"directory": "/var/user;*RST"},
             )
             # Should return error due to semicolon
-            assert len(result) == 1
-            assert "error" in result[0].text.lower() or "injection" in result[0].text.lower()
+            assert len(result.content) == 1
+            assert result.isError is True
+            assert "error" in result.content[0].text.lower() or "injection" in result.content[0].text.lower()
 
     @pytest.mark.asyncio
     async def test_configure_bluetooth_injection_blocked(self, mock_siggen):
@@ -412,8 +417,9 @@ class TestScpiSanitizationInTools:
                 "siggen_configure_bluetooth",
                 {"mode": "LE;*RST"},
             )
-            assert len(result) == 1
-            assert "error" in result[0].text.lower() or "injection" in result[0].text.lower()
+            assert len(result.content) == 1
+            assert result.isError is True
+            assert "error" in result.content[0].text.lower() or "injection" in result.content[0].text.lower()
 
     @pytest.mark.asyncio
     async def test_configure_lte_duplex_injection_blocked(self, mock_siggen):
@@ -431,8 +437,9 @@ class TestScpiSanitizationInTools:
                 "siggen_configure_lte",
                 {"bandwidth_mhz": 10, "duplex_mode": "FDD\n*RST"},
             )
-            assert len(result) == 1
-            assert "error" in result[0].text.lower() or "injection" in result[0].text.lower()
+            assert len(result.content) == 1
+            assert result.isError is True
+            assert "error" in result.content[0].text.lower() or "injection" in result.content[0].text.lower()
 
 
 class TestPathValidationInTools:
@@ -464,8 +471,9 @@ class TestPathValidationInTools:
                 "siggen_save_state",
                 {"filepath": "../../../etc/evil.json"},
             )
-            assert len(result) == 1
-            assert "error" in result[0].text.lower() or "traversal" in result[0].text.lower()
+            assert len(result.content) == 1
+            assert result.isError is True
+            assert "error" in result.content[0].text.lower() or "traversal" in result.content[0].text.lower()
 
     @pytest.mark.asyncio
     async def test_load_state_traversal_blocked(self, mock_siggen):
@@ -483,8 +491,9 @@ class TestPathValidationInTools:
                 "siggen_load_state",
                 {"filepath": "/etc/passwd"},
             )
-            assert len(result) == 1
-            assert "error" in result[0].text.lower() or "traversal" in result[0].text.lower()
+            assert len(result.content) == 1
+            assert result.isError is True
+            assert "error" in result.content[0].text.lower() or "traversal" in result.content[0].text.lower()
 
 
 class TestDriverSanitization:
