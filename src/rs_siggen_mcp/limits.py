@@ -237,7 +237,7 @@ class LimitLine:
                 return failure
         return None
 
-    def get_limit_at_frequency(self, freq_hz: float) -> dict[str, float | None]:
+    def get_limit_at_frequency(self, freq_hz: float) -> dict[str, Any]:
         """
         Get the limit values at a specific frequency.
 

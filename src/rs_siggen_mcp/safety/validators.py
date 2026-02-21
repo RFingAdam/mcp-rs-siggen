@@ -130,12 +130,15 @@ class SafetyValidator:
             depth_percent: Modulation depth in percent
 
         Raises:
-            ValueError: If depth is out of range
+            SafetyError: If depth is out of range
         """
         if depth_percent < 0 or depth_percent > self.limits.max_am_depth_pct:
-            raise ValueError(
+            raise SafetyError(
                 f"AM modulation depth {depth_percent}% must be between 0 and "
-                f"{self.limits.max_am_depth_pct}%"
+                f"{self.limits.max_am_depth_pct}%",
+                parameter="depth_percent",
+                value=depth_percent,
+                limit=self.limits.max_am_depth_pct,
             )
 
         logger.debug(f"AM depth {depth_percent}% validated")
@@ -148,15 +151,23 @@ class SafetyValidator:
             deviation_hz: FM deviation in Hz
 
         Raises:
-            ValueError: If deviation is negative or exceeds maximum
+            SafetyError: If deviation is negative or exceeds maximum
         """
         if deviation_hz < 0:
-            raise ValueError(f"FM deviation {deviation_hz} Hz must be positive")
+            raise SafetyError(
+                f"FM deviation {deviation_hz} Hz must be positive",
+                parameter="deviation_hz",
+                value=deviation_hz,
+                limit=0.0,
+            )
 
         if deviation_hz > self.limits.max_fm_deviation_hz:
-            raise ValueError(
+            raise SafetyError(
                 f"FM deviation {deviation_hz/1e6:.3f} MHz exceeds maximum "
-                f"{self.limits.max_fm_deviation_hz/1e6:.3f} MHz"
+                f"{self.limits.max_fm_deviation_hz/1e6:.3f} MHz",
+                parameter="deviation_hz",
+                value=deviation_hz,
+                limit=self.limits.max_fm_deviation_hz,
             )
 
         logger.debug(f"FM deviation {deviation_hz/1e3:.3f} kHz validated")
@@ -170,17 +181,30 @@ class SafetyValidator:
             period_s: Pulse period in seconds (optional)
 
         Raises:
-            ValueError: If parameters are invalid
+            SafetyError: If parameters are invalid
         """
         if width_s <= 0:
-            raise ValueError(f"Pulse width {width_s} s must be positive")
+            raise SafetyError(
+                f"Pulse width {width_s} s must be positive",
+                parameter="width_s",
+                value=width_s,
+                limit=0.0,
+            )
 
         if period_s is not None:
             if period_s <= 0:
-                raise ValueError(f"Pulse period {period_s} s must be positive")
+                raise SafetyError(
+                    f"Pulse period {period_s} s must be positive",
+                    parameter="period_s",
+                    value=period_s,
+                    limit=0.0,
+                )
             if width_s >= period_s:
-                raise ValueError(
-                    f"Pulse width ({width_s} s) must be less than period ({period_s} s)"
+                raise SafetyError(
+                    f"Pulse width ({width_s} s) must be less than period ({period_s} s)",
+                    parameter="width_s",
+                    value=width_s,
+                    limit=period_s,
                 )
 
         logger.debug(f"Pulse width {width_s*1e6:.1f} us validated")
