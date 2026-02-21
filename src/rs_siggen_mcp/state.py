@@ -1,6 +1,7 @@
 """Instrument state management for signal generator configuration persistence."""
 
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -8,6 +9,8 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .driver.siggen_driver import RSSignalGeneratorDriver
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -268,8 +271,8 @@ class StateManager:
             if mod.am_enabled:
                 am_depth = await driver.scpi_query("SOURce1:AM:DEPTh?")
                 mod.am_depth_percent = float(am_depth)
-        except Exception:
-            pass
+        except (OSError, ValueError) as e:
+            logger.debug("Could not query AM state: %s", e)
 
         try:
             fm_state = await driver.scpi_query("SOURce1:FM:STATe?")
@@ -277,8 +280,8 @@ class StateManager:
             if mod.fm_enabled:
                 fm_dev = await driver.scpi_query("SOURce1:FM:DEViation?")
                 mod.fm_deviation_hz = float(fm_dev)
-        except Exception:
-            pass
+        except (OSError, ValueError) as e:
+            logger.debug("Could not query FM state: %s", e)
 
         try:
             pm_state = await driver.scpi_query("SOURce1:PM:STATe?")
@@ -286,8 +289,8 @@ class StateManager:
             if mod.pm_enabled:
                 pm_dev = await driver.scpi_query("SOURce1:PM:DEViation?")
                 mod.pm_deviation_rad = float(pm_dev)
-        except Exception:
-            pass
+        except (OSError, ValueError) as e:
+            logger.debug("Could not query PM state: %s", e)
 
         try:
             pulse_state = await driver.scpi_query("SOURce1:PULM:STATe?")
@@ -297,20 +300,21 @@ class StateManager:
                 mod.pulse_width_s = float(pulse_w)
                 pulse_p = await driver.scpi_query("SOURce1:PULM:PERiod?")
                 mod.pulse_period_s = float(pulse_p)
-        except Exception:
-            pass
+        except (OSError, ValueError) as e:
+            logger.debug("Could not query pulse state: %s", e)
 
         try:
             iq_state = await driver.scpi_query("SOURce:IQ:STATe?")
             mod.iq_enabled = iq_state.strip() in ("1", "ON")
-        except Exception:
-            pass
+        except (OSError, ValueError) as e:
+            logger.debug("Could not query IQ state: %s", e)
 
         # Query reference source
         try:
             ref = await driver.scpi_query("SOURce1:ROSCillator:SOURce?")
             reference_source = ref.strip()
-        except Exception:
+        except (OSError, ValueError) as e:
+            logger.debug("Could not query reference source: %s", e)
             reference_source = "INTernal"
 
         # Get instrument info
@@ -400,7 +404,8 @@ class StateManager:
                     "path": str(filepath),
                     "summary": state.get_summary(),
                 })
-            except Exception as e:
+            except (json.JSONDecodeError, KeyError, ValueError, OSError) as e:
+                logger.warning("Failed to load state file %s: %s", filepath, e)
                 states.append({
                     "filename": filepath.name,
                     "path": str(filepath),

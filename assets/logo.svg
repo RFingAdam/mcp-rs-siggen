@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#00d2ff"/>
+      <stop offset="50%" style="stop-color:#3a7bd5"/>
+      <stop offset="100%" style="stop-color:#00d2ff"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f39c12"/>
+      <stop offset="100%" style="stop-color:#e74c3c"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded rectangle -->
+  <rect x="16" y="16" width="480" height="480" rx="64" ry="64" fill="url(#bg)"/>
+
+  <!-- Signal wave (sine wave) -->
+  <path d="M 80 256
+           Q 120 156, 160 256
+           Q 200 356, 240 256
+           Q 280 156, 320 256
+           Q 360 356, 400 256
+           Q 420 206, 432 256"
+        fill="none" stroke="url(#wave)" stroke-width="12" stroke-linecap="round"/>
+
+  <!-- Secondary wave (phase shifted, lower opacity) -->
+  <path d="M 80 256
+           Q 120 186, 160 256
+           Q 200 326, 240 256
+           Q 280 186, 320 256
+           Q 360 326, 400 256
+           Q 420 221, 432 256"
+        fill="none" stroke="url(#wave)" stroke-width="6" stroke-linecap="round" opacity="0.4"/>
+
+  <!-- RF output indicator (antenna/broadcast symbol) -->
+  <path d="M 400 180 Q 420 160, 440 180" fill="none" stroke="url(#accent)" stroke-width="5" stroke-linecap="round"/>
+  <path d="M 388 164 Q 420 132, 452 164" fill="none" stroke="url(#accent)" stroke-width="5" stroke-linecap="round"/>
+  <path d="M 376 148 Q 420 104, 464 148" fill="none" stroke="url(#accent)" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- Instrument body outline -->
+  <rect x="64" y="320" width="384" height="120" rx="12" ry="12" fill="none" stroke="#4a5568" stroke-width="3"/>
+
+  <!-- Front panel elements -->
+  <!-- Display -->
+  <rect x="84" y="336" width="160" height="56" rx="4" ry="4" fill="#0a1628" stroke="#2d3748" stroke-width="2"/>
+
+  <!-- Frequency readout text -->
+  <text x="164" y="360" font-family="monospace" font-size="16" fill="#00d2ff" text-anchor="middle">1.000 000</text>
+  <text x="164" y="380" font-family="monospace" font-size="12" fill="#4a9eff" text-anchor="middle">GHz</text>
+
+  <!-- Power readout -->
+  <text x="310" y="360" font-family="monospace" font-size="14" fill="#f39c12" text-anchor="middle">-10.0 dBm</text>
+
+  <!-- Knob -->
+  <circle cx="390" cy="376" r="24" fill="none" stroke="#4a5568" stroke-width="3"/>
+  <circle cx="390" cy="376" r="2" fill="#718096"/>
+  <line x1="390" y1="376" x2="390" y2="356" stroke="#718096" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- RF output connector -->
+  <circle cx="416" cy="416" r="8" fill="none" stroke="url(#accent)" stroke-width="2"/>
+  <circle cx="416" cy="416" r="3" fill="url(#accent)"/>
+
+  <!-- MCP connection indicator -->
+  <rect x="84" y="400" width="48" height="20" rx="4" ry="4" fill="#2d3748"/>
+  <text x="108" y="414" font-family="sans-serif" font-size="10" font-weight="bold" fill="#00d2ff" text-anchor="middle">MCP</text>
+
+  <!-- R&S text -->
+  <text x="256" y="76" font-family="sans-serif" font-size="18" font-weight="bold" fill="#718096" text-anchor="middle" letter-spacing="4">R&amp;S SIGGEN</text>
+</svg>
