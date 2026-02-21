@@ -8,7 +8,6 @@ Covers:
 """
 
 import asyncio
-import json
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -19,10 +18,8 @@ from rs_siggen_mcp.exceptions import (
     ConfigurationError,
     ConnectionError,
     SafetyError,
-    SignalGeneratorError,
     TimeoutError,
 )
-
 
 # =============================================================================
 # Issue 4: asyncio.Lock Tests
@@ -58,9 +55,9 @@ class TestAsyncioLocks:
         mock_sg.is_connected = True
         mock_sg.connect = AsyncMock()
 
-        with patch("rs_siggen_mcp.tools._connection_lock.acquire", tracking_acquire), \
-             patch("rs_siggen_mcp.tools.get_settings") as mock_settings, \
-             patch("rs_siggen_mcp.tools.RSSignalGeneratorDriver", return_value=mock_sg):
+        with patch("rs_siggen_mcp.tools._common._connection_lock.acquire", tracking_acquire), \
+             patch("rs_siggen_mcp.tools._common.get_settings") as mock_settings, \
+             patch("rs_siggen_mcp.tools._common.RSSignalGeneratorDriver", return_value=mock_sg):
             settings = MagicMock()
             settings.default_host = "192.168.1.100"
             settings.default_port = 5025
@@ -71,7 +68,7 @@ class TestAsyncioLocks:
 
             # Clear any existing connections
             from rs_siggen_mcp import tools
-            tools._siggen_connections.clear()
+            tools._common._siggen_connections.clear()
 
             await _get_siggen("192.168.1.100", 5025)
             assert lock_acquired
@@ -90,7 +87,7 @@ class TestAsyncioLocks:
             lock_acquired = True
             return await original_acquire()
 
-        with patch("rs_siggen_mcp.tools._connection_lock.acquire", tracking_acquire):
+        with patch("rs_siggen_mcp.tools._common._connection_lock.acquire", tracking_acquire):
             await _close_siggen("192.168.1.100", 5025)
             assert lock_acquired
 
@@ -114,7 +111,7 @@ class TestAsyncioLocks:
         mock_sg = AsyncMock()
         mock_sg.is_connected = True
 
-        with patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_sg):
+        with patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_sg):
             result = await handle_tool("siggen_apply_template", {})
             assert result.isError is False
             assert "template_applied" in result.content[0].text
@@ -128,7 +125,7 @@ class TestAsyncioLocks:
 class TestIsErrorFlag:
     """Test that error responses have isError=True and success responses have isError=False."""
 
-    def test_format_result_sets_isError_false(self):
+    def test_format_result_sets_is_error_false(self):
         """Test _format_result returns CallToolResult with isError=False."""
         from rs_siggen_mcp.tools import _format_result
 
@@ -137,7 +134,7 @@ class TestIsErrorFlag:
         assert len(result.content) == 1
         assert "ok" in result.content[0].text
 
-    def test_format_error_sets_isError_true(self):
+    def test_format_error_sets_is_error_true(self):
         """Test _format_error returns CallToolResult with isError=True."""
         from rs_siggen_mcp.tools import _format_error
 
@@ -148,7 +145,7 @@ class TestIsErrorFlag:
         assert "test error" in result.content[0].text
 
     @pytest.mark.asyncio
-    async def test_unknown_tool_returns_isError_true(self):
+    async def test_unknown_tool_returns_is_error_true(self):
         """Test that unknown tool name returns isError=True."""
         from rs_siggen_mcp.tools import handle_tool
 
@@ -157,40 +154,40 @@ class TestIsErrorFlag:
         assert "Unknown tool" in result.content[0].text
 
     @pytest.mark.asyncio
-    async def test_connection_error_returns_isError_true(self):
+    async def test_connection_error_returns_is_error_true(self):
         """Test that connection errors return isError=True."""
         from rs_siggen_mcp.tools import handle_tool
 
-        with patch("rs_siggen_mcp.tools._get_siggen",
+        with patch("rs_siggen_mcp.tools._common._get_siggen",
                     side_effect=ConnectionError("Cannot connect", "192.168.1.100:5025")):
             result = await handle_tool("siggen_identify", {})
             assert result.isError is True
             assert "Cannot connect" in result.content[0].text
 
     @pytest.mark.asyncio
-    async def test_timeout_error_returns_isError_true(self):
+    async def test_timeout_error_returns_is_error_true(self):
         """Test that timeout errors return isError=True."""
         from rs_siggen_mcp.tools import handle_tool
 
-        with patch("rs_siggen_mcp.tools._get_siggen",
+        with patch("rs_siggen_mcp.tools._common._get_siggen",
                     side_effect=TimeoutError("Timed out", "192.168.1.100:5025")):
             result = await handle_tool("siggen_set_frequency", {"frequency_hz": 1e9})
             assert result.isError is True
             assert "Timed out" in result.content[0].text
 
     @pytest.mark.asyncio
-    async def test_safety_error_returns_isError_true(self):
+    async def test_safety_error_returns_is_error_true(self):
         """Test that safety limit errors return isError=True."""
         from rs_siggen_mcp.tools import handle_tool
 
-        with patch("rs_siggen_mcp.tools._get_siggen",
+        with patch("rs_siggen_mcp.tools._common._get_siggen",
                     side_effect=SafetyError("Power too high", "power", 40.0, 25.0)):
             result = await handle_tool("siggen_set_power", {"power_dbm": 40.0})
             assert result.isError is True
             assert "Power too high" in result.content[0].text
 
     @pytest.mark.asyncio
-    async def test_value_error_returns_isError_true(self):
+    async def test_value_error_returns_is_error_true(self):
         """Test that ValueError returns isError=True."""
         from rs_siggen_mcp.tools import handle_tool
 
@@ -199,7 +196,7 @@ class TestIsErrorFlag:
         assert "Unknown template" in result.content[0].text
 
     @pytest.mark.asyncio
-    async def test_successful_tool_returns_isError_false(self):
+    async def test_successful_tool_returns_is_error_false(self):
         """Test that successful tool calls return isError=False."""
         from rs_siggen_mcp.tools import handle_tool
 
@@ -208,30 +205,30 @@ class TestIsErrorFlag:
         assert "presets" in result.content[0].text
 
     @pytest.mark.asyncio
-    async def test_no_template_loaded_returns_isError_true(self):
+    async def test_no_template_loaded_returns_is_error_true(self):
         """Test that apply_template without loading returns isError=True."""
-        from rs_siggen_mcp.tools import handle_tool
         import rs_siggen_mcp.tools as tools_module
+        from rs_siggen_mcp.tools import handle_tool
 
         # Clear any loaded template
-        old_template = tools_module._current_template
-        tools_module._current_template = None
+        old_template = tools_module._common._current_template
+        tools_module._common._current_template = None
         try:
             result = await handle_tool("siggen_apply_template", {})
             assert result.isError is True
             assert "No template loaded" in result.content[0].text
         finally:
-            tools_module._current_template = old_template
+            tools_module._common._current_template = old_template
 
     @pytest.mark.asyncio
-    async def test_list_mode_length_mismatch_returns_isError_true(self):
+    async def test_list_mode_length_mismatch_returns_is_error_true(self):
         """Test that list_mode with mismatched array lengths returns isError=True."""
         from rs_siggen_mcp.tools import handle_tool
 
         mock_sg = AsyncMock()
         mock_sg.is_connected = True
 
-        with patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_sg):
+        with patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_sg):
             result = await handle_tool("siggen_configure_list_mode", {
                 "frequencies_hz": [1e9, 2e9],
                 "powers_dbm": [-10.0],
@@ -253,7 +250,7 @@ class TestSpecificExceptionHandling:
         """Test that connection errors are logged at ERROR level."""
         from rs_siggen_mcp.tools import handle_tool
 
-        with patch("rs_siggen_mcp.tools._get_siggen",
+        with patch("rs_siggen_mcp.tools._common._get_siggen",
                     side_effect=ConnectionError("Refused", "192.168.1.100:5025")), \
              caplog.at_level(logging.ERROR, logger="rs_siggen_mcp.tools"):
             await handle_tool("siggen_identify", {})
@@ -268,7 +265,7 @@ class TestSpecificExceptionHandling:
         """Test that timeout errors are logged at ERROR level."""
         from rs_siggen_mcp.tools import handle_tool
 
-        with patch("rs_siggen_mcp.tools._get_siggen",
+        with patch("rs_siggen_mcp.tools._common._get_siggen",
                     side_effect=TimeoutError("Timed out", "192.168.1.100:5025")), \
              caplog.at_level(logging.ERROR, logger="rs_siggen_mcp.tools"):
             await handle_tool("siggen_set_frequency", {"frequency_hz": 1e9})
@@ -283,7 +280,7 @@ class TestSpecificExceptionHandling:
         """Test that communication errors are logged at ERROR level."""
         from rs_siggen_mcp.tools import handle_tool
 
-        with patch("rs_siggen_mcp.tools._get_siggen",
+        with patch("rs_siggen_mcp.tools._common._get_siggen",
                     side_effect=CommunicationError("Send failed", "192.168.1.100:5025")), \
              caplog.at_level(logging.ERROR, logger="rs_siggen_mcp.tools"):
             await handle_tool("siggen_set_power", {"power_dbm": -10.0})
@@ -298,7 +295,7 @@ class TestSpecificExceptionHandling:
         """Test that configuration errors are logged at ERROR level."""
         from rs_siggen_mcp.tools import handle_tool
 
-        with patch("rs_siggen_mcp.tools._get_siggen",
+        with patch("rs_siggen_mcp.tools._common._get_siggen",
                     side_effect=ConfigurationError("No IQ support", "192.168.1.100:5025")), \
              caplog.at_level(logging.ERROR, logger="rs_siggen_mcp.tools"):
             await handle_tool("siggen_iq_on", {})
@@ -318,8 +315,8 @@ class TestSpecificExceptionHandling:
         mock_sg = AsyncMock()
         mock_sg.is_connected = True
 
-        with patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_sg), \
-             patch("rs_siggen_mcp.tools.get_settings") as mock_settings, \
+        with patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_sg), \
+             patch("rs_siggen_mcp.tools._common.get_settings") as mock_settings, \
              caplog.at_level(logging.WARNING, logger="rs_siggen_mcp.tools"):
             settings = MagicMock()
             settings.default_host = "192.168.1.100"
@@ -347,7 +344,7 @@ class TestSpecificExceptionHandling:
             side_effect=CommunicationError("Query failed", "192.168.1.100:5025")
         )
 
-        with patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_sg):
+        with patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_sg):
             result = await handle_tool("siggen_get_calibration_status", {})
             assert result.isError is False
             assert "unknown" in result.content[0].text
@@ -355,6 +352,7 @@ class TestSpecificExceptionHandling:
     def test_no_bare_except_in_tools(self):
         """Verify no bare 'except Exception' or 'except:' in tools.py."""
         import inspect
+
         import rs_siggen_mcp.tools as tools_module
 
         source = inspect.getsource(tools_module)
@@ -371,6 +369,7 @@ class TestSpecificExceptionHandling:
     def test_no_bare_except_in_state(self):
         """Verify no bare 'except Exception:' with pass in state.py."""
         import inspect
+
         import rs_siggen_mcp.state as state_module
 
         source = inspect.getsource(state_module)
@@ -390,6 +389,7 @@ class TestSpecificExceptionHandling:
     def test_no_bare_except_in_scpi_socket(self):
         """Verify no bare 'except Exception' in scpi_socket.py."""
         import inspect
+
         import rs_siggen_mcp.driver.scpi_socket as socket_module
 
         source = inspect.getsource(socket_module)
@@ -402,6 +402,7 @@ class TestSpecificExceptionHandling:
     def test_no_bare_except_in_siggen_driver(self):
         """Verify no bare 'except Exception' with pass in siggen_driver.py."""
         import inspect
+
         import rs_siggen_mcp.driver.siggen_driver as driver_module
 
         source = inspect.getsource(driver_module)
@@ -441,9 +442,9 @@ class TestCompleteTemplateApplication:
     @pytest.mark.asyncio
     async def test_template_apply_am_modulation(self, mock_siggen):
         """Test that template apply handles AM modulation."""
-        from rs_siggen_mcp.tools import handle_tool
         import rs_siggen_mcp.tools as tools_module
         from rs_siggen_mcp.templates.base import SignalTemplate
+        from rs_siggen_mcp.tools import handle_tool
 
         # Create template with AM modulation
         template = SignalTemplate(
@@ -458,10 +459,10 @@ class TestCompleteTemplateApplication:
             },
         )
 
-        old_template = tools_module._current_template
-        tools_module._current_template = template
+        old_template = tools_module._common._current_template
+        tools_module._common._current_template = template
         try:
-            with patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen):
+            with patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen):
                 result = await handle_tool("siggen_apply_template", {})
                 assert result.isError is False
 
@@ -472,14 +473,14 @@ class TestCompleteTemplateApplication:
                 mock_siggen.scpi_send.assert_any_call("SOURce1:PULM:STATe OFF")
                 mock_siggen.scpi_send.assert_any_call("SOURce:IQ:STATe OFF")
         finally:
-            tools_module._current_template = old_template
+            tools_module._common._current_template = old_template
 
     @pytest.mark.asyncio
     async def test_template_apply_fm_modulation(self, mock_siggen):
         """Test that template apply handles FM modulation."""
-        from rs_siggen_mcp.tools import handle_tool
         import rs_siggen_mcp.tools as tools_module
         from rs_siggen_mcp.templates.base import SignalTemplate
+        from rs_siggen_mcp.tools import handle_tool
 
         template = SignalTemplate(
             name="test_fm",
@@ -493,24 +494,24 @@ class TestCompleteTemplateApplication:
             },
         )
 
-        old_template = tools_module._current_template
-        tools_module._current_template = template
+        old_template = tools_module._common._current_template
+        tools_module._common._current_template = template
         try:
-            with patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen):
+            with patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen):
                 result = await handle_tool("siggen_apply_template", {})
                 assert result.isError is False
 
                 mock_siggen.configure_fm.assert_called_once_with(75000.0, enable=True)
                 mock_siggen.scpi_send.assert_any_call("SOURce1:AM:STATe OFF")
         finally:
-            tools_module._current_template = old_template
+            tools_module._common._current_template = old_template
 
     @pytest.mark.asyncio
     async def test_template_apply_pm_modulation(self, mock_siggen):
         """Test that template apply handles PM modulation."""
-        from rs_siggen_mcp.tools import handle_tool
         import rs_siggen_mcp.tools as tools_module
         from rs_siggen_mcp.templates.base import SignalTemplate
+        from rs_siggen_mcp.tools import handle_tool
 
         template = SignalTemplate(
             name="test_pm",
@@ -524,10 +525,10 @@ class TestCompleteTemplateApplication:
             },
         )
 
-        old_template = tools_module._current_template
-        tools_module._current_template = template
+        old_template = tools_module._common._current_template
+        tools_module._common._current_template = template
         try:
-            with patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen):
+            with patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen):
                 result = await handle_tool("siggen_apply_template", {})
                 assert result.isError is False
 
@@ -535,14 +536,14 @@ class TestCompleteTemplateApplication:
                 mock_siggen.scpi_send.assert_any_call("SOURce1:AM:STATe OFF")
                 mock_siggen.scpi_send.assert_any_call("SOURce1:FM:STATe OFF")
         finally:
-            tools_module._current_template = old_template
+            tools_module._common._current_template = old_template
 
     @pytest.mark.asyncio
     async def test_template_apply_pulse_modulation(self, mock_siggen):
         """Test that template apply handles pulse modulation."""
-        from rs_siggen_mcp.tools import handle_tool
         import rs_siggen_mcp.tools as tools_module
         from rs_siggen_mcp.templates.base import SignalTemplate
+        from rs_siggen_mcp.tools import handle_tool
 
         template = SignalTemplate(
             name="test_pulse",
@@ -557,10 +558,10 @@ class TestCompleteTemplateApplication:
             },
         )
 
-        old_template = tools_module._current_template
-        tools_module._current_template = template
+        old_template = tools_module._common._current_template
+        tools_module._common._current_template = template
         try:
-            with patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen):
+            with patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen):
                 result = await handle_tool("siggen_apply_template", {})
                 assert result.isError is False
 
@@ -569,14 +570,14 @@ class TestCompleteTemplateApplication:
                 )
                 mock_siggen.scpi_send.assert_any_call("SOURce1:AM:STATe OFF")
         finally:
-            tools_module._current_template = old_template
+            tools_module._common._current_template = old_template
 
     @pytest.mark.asyncio
     async def test_template_apply_iq_modulation(self, mock_siggen):
         """Test that template apply handles IQ modulation."""
-        from rs_siggen_mcp.tools import handle_tool
         import rs_siggen_mcp.tools as tools_module
         from rs_siggen_mcp.templates.base import SignalTemplate
+        from rs_siggen_mcp.tools import handle_tool
 
         template = SignalTemplate(
             name="test_iq",
@@ -589,10 +590,10 @@ class TestCompleteTemplateApplication:
             },
         )
 
-        old_template = tools_module._current_template
-        tools_module._current_template = template
+        old_template = tools_module._common._current_template
+        tools_module._common._current_template = template
         try:
-            with patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen):
+            with patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen):
                 result = await handle_tool("siggen_apply_template", {})
                 assert result.isError is False
 
@@ -602,14 +603,14 @@ class TestCompleteTemplateApplication:
                 mock_siggen.scpi_send.assert_any_call("SOURce1:PM:STATe OFF")
                 mock_siggen.scpi_send.assert_any_call("SOURce1:PULM:STATe OFF")
         finally:
-            tools_module._current_template = old_template
+            tools_module._common._current_template = old_template
 
     @pytest.mark.asyncio
     async def test_template_apply_all_modulations_off(self, mock_siggen):
         """Test that template with no modulation disables all."""
-        from rs_siggen_mcp.tools import handle_tool
         import rs_siggen_mcp.tools as tools_module
         from rs_siggen_mcp.templates.base import SignalTemplate
+        from rs_siggen_mcp.tools import handle_tool
 
         template = SignalTemplate(
             name="test_cw",
@@ -620,10 +621,10 @@ class TestCompleteTemplateApplication:
             modulation_config={},
         )
 
-        old_template = tools_module._current_template
-        tools_module._current_template = template
+        old_template = tools_module._common._current_template
+        tools_module._common._current_template = template
         try:
-            with patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen):
+            with patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen):
                 result = await handle_tool("siggen_apply_template", {})
                 assert result.isError is False
 
@@ -634,14 +635,14 @@ class TestCompleteTemplateApplication:
                 mock_siggen.scpi_send.assert_any_call("SOURce1:PULM:STATe OFF")
                 mock_siggen.scpi_send.assert_any_call("SOURce:IQ:STATe OFF")
         finally:
-            tools_module._current_template = old_template
+            tools_module._common._current_template = old_template
 
     @pytest.mark.asyncio
     async def test_template_apply_combined_modulation(self, mock_siggen):
         """Test template with AM + pulse (common immunity test combo)."""
-        from rs_siggen_mcp.tools import handle_tool
         import rs_siggen_mcp.tools as tools_module
         from rs_siggen_mcp.templates.base import SignalTemplate
+        from rs_siggen_mcp.tools import handle_tool
 
         template = SignalTemplate(
             name="test_combined",
@@ -658,10 +659,10 @@ class TestCompleteTemplateApplication:
             },
         )
 
-        old_template = tools_module._current_template
-        tools_module._current_template = template
+        old_template = tools_module._common._current_template
+        tools_module._common._current_template = template
         try:
-            with patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen):
+            with patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen):
                 result = await handle_tool("siggen_apply_template", {})
                 assert result.isError is False
 
@@ -671,14 +672,14 @@ class TestCompleteTemplateApplication:
                 )
                 mock_siggen.output_on.assert_called_once()
         finally:
-            tools_module._current_template = old_template
+            tools_module._common._current_template = old_template
 
     @pytest.mark.asyncio
     async def test_template_apply_output_enabled(self, mock_siggen):
         """Test that template apply turns on output when template specifies it."""
-        from rs_siggen_mcp.tools import handle_tool
         import rs_siggen_mcp.tools as tools_module
         from rs_siggen_mcp.templates.base import SignalTemplate
+        from rs_siggen_mcp.tools import handle_tool
 
         template = SignalTemplate(
             name="test_output",
@@ -689,22 +690,22 @@ class TestCompleteTemplateApplication:
             modulation_config={},
         )
 
-        old_template = tools_module._current_template
-        tools_module._current_template = template
+        old_template = tools_module._common._current_template
+        tools_module._common._current_template = template
         try:
-            with patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen):
+            with patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen):
                 result = await handle_tool("siggen_apply_template", {})
                 assert result.isError is False
                 mock_siggen.output_on.assert_called_once()
         finally:
-            tools_module._current_template = old_template
+            tools_module._common._current_template = old_template
 
     @pytest.mark.asyncio
     async def test_template_apply_output_disabled(self, mock_siggen):
         """Test that template apply does not turn on output when disabled."""
-        from rs_siggen_mcp.tools import handle_tool
         import rs_siggen_mcp.tools as tools_module
         from rs_siggen_mcp.templates.base import SignalTemplate
+        from rs_siggen_mcp.tools import handle_tool
 
         template = SignalTemplate(
             name="test_no_output",
@@ -715,22 +716,22 @@ class TestCompleteTemplateApplication:
             modulation_config={},
         )
 
-        old_template = tools_module._current_template
-        tools_module._current_template = template
+        old_template = tools_module._common._current_template
+        tools_module._common._current_template = template
         try:
-            with patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen):
+            with patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen):
                 result = await handle_tool("siggen_apply_template", {})
                 assert result.isError is False
                 mock_siggen.output_on.assert_not_called()
         finally:
-            tools_module._current_template = old_template
+            tools_module._common._current_template = old_template
 
     @pytest.mark.asyncio
     async def test_template_apply_fm_default_deviation(self, mock_siggen):
         """Test FM uses default deviation when not specified in config."""
-        from rs_siggen_mcp.tools import handle_tool
         import rs_siggen_mcp.tools as tools_module
         from rs_siggen_mcp.templates.base import SignalTemplate
+        from rs_siggen_mcp.tools import handle_tool
 
         template = SignalTemplate(
             name="test_fm_default",
@@ -744,22 +745,22 @@ class TestCompleteTemplateApplication:
             },
         )
 
-        old_template = tools_module._current_template
-        tools_module._current_template = template
+        old_template = tools_module._common._current_template
+        tools_module._common._current_template = template
         try:
-            with patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen):
+            with patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen):
                 result = await handle_tool("siggen_apply_template", {})
                 assert result.isError is False
                 mock_siggen.configure_fm.assert_called_once_with(75000.0, enable=True)
         finally:
-            tools_module._current_template = old_template
+            tools_module._common._current_template = old_template
 
     @pytest.mark.asyncio
     async def test_template_apply_pulse_default_width(self, mock_siggen):
         """Test pulse uses default width when not specified in config."""
-        from rs_siggen_mcp.tools import handle_tool
         import rs_siggen_mcp.tools as tools_module
         from rs_siggen_mcp.templates.base import SignalTemplate
+        from rs_siggen_mcp.tools import handle_tool
 
         template = SignalTemplate(
             name="test_pulse_default",
@@ -773,17 +774,17 @@ class TestCompleteTemplateApplication:
             },
         )
 
-        old_template = tools_module._current_template
-        tools_module._current_template = template
+        old_template = tools_module._common._current_template
+        tools_module._common._current_template = template
         try:
-            with patch("rs_siggen_mcp.tools._get_siggen", return_value=mock_siggen):
+            with patch("rs_siggen_mcp.tools._common._get_siggen", return_value=mock_siggen):
                 result = await handle_tool("siggen_apply_template", {})
                 assert result.isError is False
                 mock_siggen.configure_pulse.assert_called_once_with(
                     1e-6, None, enable=True
                 )
         finally:
-            tools_module._current_template = old_template
+            tools_module._common._current_template = old_template
 
 
 # =============================================================================
@@ -796,8 +797,8 @@ class TestServerCallToolResult:
 
     def test_server_imports_call_tool_result(self):
         """Test that server.py imports CallToolResult."""
+
         import rs_siggen_mcp.server as server_module
-        from mcp.types import CallToolResult
 
         # Verify the import is used
         assert "CallToolResult" in dir(server_module) or hasattr(
