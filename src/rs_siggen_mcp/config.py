@@ -34,6 +34,16 @@ class SiggenSettings(BaseSettings):
     max_frequency_hz: float = Field(default=67e9, description="Maximum frequency in Hz")
     min_frequency_hz: float = Field(default=8e3, description="Minimum frequency in Hz")
 
+    # Security
+    allow_raw_scpi: bool = Field(
+        default=True,
+        description=(
+            "Allow raw SCPI command execution via siggen_scpi_send/siggen_scpi_query. "
+            "Set to False to disable raw SCPI access for security hardening. "
+            "Default: True for backwards compatibility."
+        ),
+    )
+
     # Logging
     log_level: str = Field(default="INFO", description="Log level")
 

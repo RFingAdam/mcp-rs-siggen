@@ -5,7 +5,7 @@ from typing import Any
 
 from ..exceptions import ConfigurationError
 from ..models.siggen_types import InstrumentInfo, SignalGeneratorFamily
-from ..safety.validators import SafetyLimits, SafetyValidator
+from ..safety.validators import SafetyLimits, SafetyValidator, sanitize_scpi_param
 from .scpi_socket import SCPISocket
 
 logger = logging.getLogger(__name__)
@@ -105,8 +105,8 @@ class RSSignalGeneratorDriver:
         if self._rf_output_on:
             try:
                 await self.output_off()
-            except Exception:
-                pass
+            except OSError as e:
+                logger.warning("Failed to turn off RF output before disconnect: %s", e)
         await self._scpi.disconnect()
 
     async def identify(self) -> InstrumentInfo:
@@ -352,6 +352,7 @@ class RSSignalGeneratorDriver:
                 f"{self._info.model} does not have an ARB generator",
                 self.address,
             )
+        sanitize_scpi_param(waveform_path)
         await self._scpi.send(f"SOURce1:BB:ARBitrary:WAVeform:SELect '{waveform_path}'")
         await self._scpi.wait_opc()
         logger.info(f"Waveform loaded: {waveform_path}")
