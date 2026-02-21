@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "rs-siggen": {
+      "command": "uv",
+      "args": ["--directory", "/home/swamp/projects/github/mcp-rs-siggen", "run", "rs-siggen-mcp"]
+    }
+  }
+}
