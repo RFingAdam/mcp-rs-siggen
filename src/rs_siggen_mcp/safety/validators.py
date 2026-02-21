@@ -1,11 +1,125 @@
 """Safety validators for signal generator parameters."""
 
 import logging
+import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from ..exceptions import SafetyError
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# SCPI Parameter Sanitizer (Issue 1)
+# =============================================================================
+
+# Characters that can be used for SCPI command injection
+_SCPI_DANGEROUS_CHARS = re.compile(r"[;\n\r]")
+
+
+def sanitize_scpi_param(value: str) -> str:
+    """
+    Sanitize a user-provided string parameter before interpolation into SCPI commands.
+
+    Rejects strings containing SCPI metacharacters that could allow command injection:
+    - `;` (SCPI command separator - allows chaining additional commands)
+    - `\\n` and `\\r` (newlines that could inject commands on a new line)
+    - Leading `*` (could trigger IEEE 488.2 common commands like *RST, *CLS)
+
+    This function is intended for string parameters (filenames, identifiers,
+    directory paths on the instrument, etc.). Numeric parameters that are already
+    validated by SafetyValidator do not need this sanitizer.
+
+    Args:
+        value: The user-provided string to sanitize
+
+    Returns:
+        The validated string (unchanged if safe)
+
+    Raises:
+        ValueError: If the string contains dangerous SCPI metacharacters
+    """
+    if not isinstance(value, str):
+        raise ValueError(f"Expected string parameter, got {type(value).__name__}")
+
+    # Check for SCPI command separator and newline injection
+    match = _SCPI_DANGEROUS_CHARS.search(value)
+    if match:
+        char = match.group()
+        char_repr = repr(char)
+        raise ValueError(
+            f"SCPI injection detected: parameter contains forbidden character "
+            f"{char_repr} at position {match.start()}"
+        )
+
+    # Check for leading * which could trigger IEEE 488.2 common commands
+    if value.lstrip().startswith("*"):
+        raise ValueError(
+            "SCPI injection detected: parameter starts with '*' which could "
+            "trigger instrument common commands (e.g., *RST, *CLS)"
+        )
+
+    return value
+
+
+# =============================================================================
+# File Path Validator (Issue 2)
+# =============================================================================
+
+
+def validate_safe_path(user_path: str | Path, base_dir: str | Path) -> Path:
+    """
+    Validate that a user-provided file path is safe and contained within the base directory.
+
+    Uses Path.resolve() to canonicalize the path (resolving .., symlinks, etc.)
+    and then checks that the resolved path is relative to the base directory.
+
+    This prevents:
+    - Path traversal attacks (../../etc/passwd)
+    - Absolute path escapes (/etc/passwd)
+    - Symlink attacks (symlink pointing outside base_dir)
+
+    Args:
+        user_path: The user-provided file path (relative or absolute)
+        base_dir: The base directory that all paths must be contained within
+
+    Returns:
+        The resolved, validated Path object
+
+    Raises:
+        ValueError: If the path escapes the base directory or is otherwise unsafe
+    """
+    base_dir = Path(base_dir).resolve()
+    user_path = Path(user_path)
+
+    # If user_path is not absolute, treat it as relative to base_dir
+    if not user_path.is_absolute():
+        resolved = (base_dir / user_path).resolve()
+    else:
+        resolved = user_path.resolve()
+
+    # Check that the resolved path is within the base directory
+    if not resolved.is_relative_to(base_dir):
+        raise ValueError(
+            f"Path traversal detected: resolved path '{resolved}' is outside "
+            f"the allowed base directory '{base_dir}'"
+        )
+
+    # Check if any component of the path is a symlink pointing outside base_dir
+    # Walk up from the resolved path to check each existing component
+    check_path = resolved
+    while check_path != base_dir and check_path != check_path.parent:
+        if check_path.is_symlink():
+            link_target = check_path.resolve()
+            if not link_target.is_relative_to(base_dir):
+                raise ValueError(
+                    f"Symlink attack detected: '{check_path}' points to "
+                    f"'{link_target}' which is outside the allowed base directory"
+                )
+        check_path = check_path.parent
+
+    return resolved
 
 
 @dataclass
