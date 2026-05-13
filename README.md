@@ -22,6 +22,14 @@
 
 ---
 
+> [!IMPORTANT]
+> **Hardware required.** This MCP server controls real R&S signal
+> generators over TCP/IP SCPI. You need actual **SMW / SMBV / SMM / SMCV /
+> SGT / SGS / SMA / SMB / SMC** hardware on the network to be useful.
+> The server is a thin driver — no built-in simulator. Generator-specific
+> option licenses (e.g. K71 for 5G NR, K81 for WLAN) must be enabled on
+> the unit for the matching tool surface to function.
+
 ## What is mcp-rs-siggen?
 
 `mcp-rs-siggen` is a [Model Context Protocol](https://modelcontextprotocol.io)
