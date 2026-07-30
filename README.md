@@ -23,12 +23,30 @@
 ---
 
 > [!IMPORTANT]
-> **Hardware required.** This MCP server controls real R&S signal
-> generators over TCP/IP SCPI. You need actual **SMW / SMBV / SMM / SMCV /
-> SGT / SGS / SMA / SMB / SMC** hardware on the network to be useful.
-> The server is a thin driver — no built-in simulator. Generator-specific
-> option licenses (e.g. K71 for 5G NR, K81 for WLAN) must be enabled on
-> the unit for the matching tool surface to function.
+> **Hardware required for real output.** This MCP server controls real R&S
+> signal generators over TCP/IP SCPI. You need actual **SMW / SMBV / SMM /
+> SMCV / SGT / SGS / SMA / SMB / SMC** hardware on the network to emit
+> anything. Generator-specific option licenses (e.g. K71 for 5G NR, K81 for
+> WLAN) must be enabled on the unit for the matching tool surface to function.
+>
+> For offline work there is a simulator: `siggen-simulator` serves the
+> generator's SCPI command surface on TCP 5025 so the tools can be exercised
+> with nothing attached. It produces synthetic values only — anything measured
+> against it is measuring nothing.
+
+## Offline simulator
+
+```bash
+# serve the simulated generator (loopback only by default)
+uv run siggen-simulator --port 5125
+
+# nodes transcribed from documentation but never confirmed on hardware
+uv run siggen-simulator --list-unverified
+```
+
+Fault injection exists so timeout and desync handling can be exercised
+deliberately rather than hoped about: `--drop-responses`, `--extra-responses`,
+`--close-after`, `--slow-response-ms`, `--strict-unknown`, `--time-scale`.
 
 ## What is mcp-rs-siggen?
 

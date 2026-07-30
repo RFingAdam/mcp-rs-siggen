@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from mcp.types import CallToolResult, Tool
+from scpi_core import Idempotency
 
 from . import _common
 
@@ -28,7 +29,9 @@ async def handle_get_calibration_status(
     """Get calibration status."""
     sg = await _common._get_siggen(host, port)
     try:
-        cal_date = await sg.scpi_query("CALibration:DATE?")
+        cal_date = await sg.scpi_query(
+            "CALibration:DATE?", idempotency=Idempotency.QUERY
+        )
     except (_common.CommunicationError, _common.TimeoutError) as e:
         logger.debug("Could not query calibration date: %s", e)
         cal_date = "unknown"

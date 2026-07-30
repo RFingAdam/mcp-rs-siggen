@@ -2,6 +2,7 @@
 
 
 import pytest
+from scpi_core import Idempotency
 
 from rs_siggen_mcp.driver.siggen_driver import RSSignalGeneratorDriver
 from rs_siggen_mcp.exceptions import ConfigurationError
@@ -36,154 +37,171 @@ class TestRSSignalGeneratorDriverConnect:
     """Test driver connection and identification."""
 
     @pytest.mark.asyncio
-    async def test_connect(self, mock_driver, mock_scpi_socket):
+    async def test_connect(self, mock_driver, mock_scpi_transport):
         """Test successful connection."""
         assert mock_driver.is_connected is True
         assert mock_driver.info is not None
         assert mock_driver.info.model == "SMW200A"
 
     @pytest.mark.asyncio
-    async def test_identify(self, mock_driver, mock_scpi_socket):
+    async def test_identify(self, mock_driver, mock_scpi_transport):
         """Test instrument identification."""
-        mock_scpi_socket.query.return_value = (
+        mock_scpi_transport.query.return_value = (
             "Rohde&Schwarz,SMBV100B,1420.7508K02/100001,5.00.042.00"
         )
         info = await mock_driver.identify()
         assert info.model == "SMBV100B"
         assert info.family == SignalGeneratorFamily.SMBV100B
-        mock_scpi_socket.query.assert_called_with("*IDN?")
+        mock_scpi_transport.query.assert_called_with("*IDN?", idempotency=Idempotency.QUERY)
 
 
 class TestRSSignalGeneratorDriverRF:
     """Test RF output control methods."""
 
     @pytest.mark.asyncio
-    async def test_set_frequency(self, mock_driver, mock_scpi_socket):
+    async def test_set_frequency(self, mock_driver, mock_scpi_transport):
         """Test setting frequency."""
         await mock_driver.set_frequency(1e9)
-        mock_scpi_socket.send.assert_called_with("SOURce1:FREQuency:CW 1000000000.0")
-
-    @pytest.mark.asyncio
-    async def test_get_frequency(self, mock_driver, mock_scpi_socket):
-        """Test getting frequency."""
-        mock_scpi_socket.query.return_value = "1000000000"
-        freq = await mock_driver.get_frequency()
-        assert freq == 1e9
-        mock_scpi_socket.query.assert_called_with("SOURce1:FREQuency:CW?")
-
-    @pytest.mark.asyncio
-    async def test_set_power(self, mock_driver, mock_scpi_socket):
-        """Test setting power."""
-        await mock_driver.set_power(-10.0)
-        mock_scpi_socket.send.assert_called_with(
-            "SOURce1:POWer:LEVel:IMMediate:AMPLitude -10.0"
+        mock_scpi_transport.send.assert_called_with(
+            "SOURce1:FREQuency:CW 1000000000.0", idempotency=Idempotency.SETTING
         )
 
     @pytest.mark.asyncio
-    async def test_get_power(self, mock_driver, mock_scpi_socket):
+    async def test_get_frequency(self, mock_driver, mock_scpi_transport):
+        """Test getting frequency."""
+        mock_scpi_transport.query.return_value = "1000000000"
+        freq = await mock_driver.get_frequency()
+        assert freq == 1e9
+        mock_scpi_transport.query.assert_called_with(
+            "SOURce1:FREQuency:CW?", idempotency=Idempotency.QUERY
+        )
+
+    @pytest.mark.asyncio
+    async def test_set_power(self, mock_driver, mock_scpi_transport):
+        """Test setting power."""
+        await mock_driver.set_power(-10.0)
+        mock_scpi_transport.send.assert_called_with(
+            "SOURce1:POWer:LEVel:IMMediate:AMPLitude -10.0",
+            idempotency=Idempotency.SETTING,
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_power(self, mock_driver, mock_scpi_transport):
         """Test getting power."""
-        mock_scpi_socket.query.return_value = "-10.0"
+        mock_scpi_transport.query.return_value = "-10.0"
         power = await mock_driver.get_power()
         assert power == -10.0
 
     @pytest.mark.asyncio
-    async def test_output_on(self, mock_driver, mock_scpi_socket):
+    async def test_output_on(self, mock_driver, mock_scpi_transport):
         """Test enabling RF output."""
         await mock_driver.output_on()
-        mock_scpi_socket.send.assert_called_with("OUTPut1:STATe ON")
+        mock_scpi_transport.send.assert_called_with(
+            "OUTPut1:STATe ON", idempotency=Idempotency.ACTION
+        )
         assert mock_driver._rf_output_on is True
 
     @pytest.mark.asyncio
-    async def test_output_off(self, mock_driver, mock_scpi_socket):
+    async def test_output_off(self, mock_driver, mock_scpi_transport):
         """Test disabling RF output."""
         await mock_driver.output_off()
-        mock_scpi_socket.send.assert_called_with("OUTPut1:STATe OFF")
+        mock_scpi_transport.send.assert_called_with(
+            "OUTPut1:STATe OFF", idempotency=Idempotency.ACTION
+        )
         assert mock_driver._rf_output_on is False
 
     @pytest.mark.asyncio
-    async def test_get_output_state(self, mock_driver, mock_scpi_socket):
+    async def test_get_output_state(self, mock_driver, mock_scpi_transport):
         """Test querying output state."""
-        mock_scpi_socket.query.return_value = "1"
+        mock_scpi_transport.query.return_value = "1"
         state = await mock_driver.get_output_state()
         assert state is True
 
-        mock_scpi_socket.query.return_value = "0"
+        mock_scpi_transport.query.return_value = "0"
         state = await mock_driver.get_output_state()
         assert state is False
 
     @pytest.mark.asyncio
-    async def test_set_phase(self, mock_driver, mock_scpi_socket):
+    async def test_set_phase(self, mock_driver, mock_scpi_transport):
         """Test setting phase."""
         await mock_driver.set_phase(90.0)
-        mock_scpi_socket.send.assert_called_with("SOURce1:PHASe 90.0")
+        mock_scpi_transport.send.assert_called_with(
+            "SOURce1:PHASe 90.0", idempotency=Idempotency.SETTING
+        )
 
 
 class TestRSSignalGeneratorDriverModulation:
     """Test modulation control methods."""
 
     @pytest.mark.asyncio
-    async def test_configure_am(self, mock_driver, mock_scpi_socket):
+    async def test_configure_am(self, mock_driver, mock_scpi_transport):
         """Test AM configuration."""
         await mock_driver.configure_am(80.0, enable=True)
-        calls = [str(c) for c in mock_scpi_socket.send.call_args_list]
+        calls = [str(c) for c in mock_scpi_transport.send.call_args_list]
         assert any("AM:DEPTh 80.0" in c for c in calls)
         assert any("AM:STATe ON" in c for c in calls)
 
     @pytest.mark.asyncio
-    async def test_configure_fm(self, mock_driver, mock_scpi_socket):
+    async def test_configure_fm(self, mock_driver, mock_scpi_transport):
         """Test FM configuration."""
         await mock_driver.configure_fm(75e3, enable=True)
-        calls = [str(c) for c in mock_scpi_socket.send.call_args_list]
+        calls = [str(c) for c in mock_scpi_transport.send.call_args_list]
         assert any("FM:DEViation 75000.0" in c for c in calls)
         assert any("FM:STATe ON" in c for c in calls)
 
     @pytest.mark.asyncio
-    async def test_configure_pm(self, mock_driver, mock_scpi_socket):
+    async def test_configure_pm(self, mock_driver, mock_scpi_transport):
         """Test PM configuration."""
         await mock_driver.configure_pm(1.5, enable=True)
-        calls = [str(c) for c in mock_scpi_socket.send.call_args_list]
+        calls = [str(c) for c in mock_scpi_transport.send.call_args_list]
         assert any("PM:DEViation 1.5" in c for c in calls)
         assert any("PM:STATe ON" in c for c in calls)
 
     @pytest.mark.asyncio
-    async def test_configure_pm_negative_deviation(self, mock_driver, mock_scpi_socket):
+    async def test_configure_pm_negative_deviation(self, mock_driver, mock_scpi_transport):
         """Test PM with negative deviation raises error."""
         with pytest.raises(ValueError):
             await mock_driver.configure_pm(-1.0)
 
     @pytest.mark.asyncio
-    async def test_configure_pulse(self, mock_driver, mock_scpi_socket):
+    async def test_configure_pulse(self, mock_driver, mock_scpi_transport):
         """Test pulse modulation configuration."""
         await mock_driver.configure_pulse(1e-6, period_s=10e-6, enable=True)
-        calls = [str(c) for c in mock_scpi_socket.send.call_args_list]
+        calls = [str(c) for c in mock_scpi_transport.send.call_args_list]
         assert any("PULM:WIDTh" in c for c in calls)
         assert any("PULM:PERiod" in c for c in calls)
         assert any("PULM:STATe ON" in c for c in calls)
 
     @pytest.mark.asyncio
-    async def test_modulation_all_off(self, mock_driver, mock_scpi_socket):
+    async def test_modulation_all_off(self, mock_driver, mock_scpi_transport):
         """Test turning off all modulations."""
         await mock_driver.modulation_all_off()
-        mock_scpi_socket.send.assert_called_with("SOURce:MODulation:ALL:STATe OFF")
+        mock_scpi_transport.send.assert_called_with(
+            "SOURce:MODulation:ALL:STATe OFF", idempotency=Idempotency.SETTING
+        )
 
 
 class TestRSSignalGeneratorDriverIQ:
     """Test IQ modulation methods."""
 
     @pytest.mark.asyncio
-    async def test_iq_on(self, mock_driver, mock_scpi_socket):
+    async def test_iq_on(self, mock_driver, mock_scpi_transport):
         """Test enabling IQ modulation."""
         await mock_driver.iq_on()
-        mock_scpi_socket.send.assert_called_with("SOURce:IQ:STATe ON")
+        mock_scpi_transport.send.assert_called_with(
+            "SOURce:IQ:STATe ON", idempotency=Idempotency.SETTING
+        )
 
     @pytest.mark.asyncio
-    async def test_iq_off(self, mock_driver, mock_scpi_socket):
+    async def test_iq_off(self, mock_driver, mock_scpi_transport):
         """Test disabling IQ modulation."""
         await mock_driver.iq_off()
-        mock_scpi_socket.send.assert_called_with("SOURce:IQ:STATe OFF")
+        mock_scpi_transport.send.assert_called_with(
+            "SOURce:IQ:STATe OFF", idempotency=Idempotency.SETTING
+        )
 
     @pytest.mark.asyncio
-    async def test_iq_on_cw_only(self, mock_driver, mock_scpi_socket):
+    async def test_iq_on_cw_only(self, mock_driver, mock_scpi_transport):
         """Test IQ on CW-only instrument raises error."""
         mock_driver._info = InstrumentInfo(
             manufacturer="Rohde&Schwarz",
@@ -200,26 +218,30 @@ class TestRSSignalGeneratorDriverARB:
     """Test ARB waveform methods."""
 
     @pytest.mark.asyncio
-    async def test_arb_on(self, mock_driver, mock_scpi_socket):
+    async def test_arb_on(self, mock_driver, mock_scpi_transport):
         """Test enabling ARB generator."""
         await mock_driver.arb_on()
-        mock_scpi_socket.send.assert_called_with("SOURce1:BB:ARBitrary:STATe ON")
+        mock_scpi_transport.send.assert_called_with(
+            "SOURce1:BB:ARBitrary:STATe ON", idempotency=Idempotency.SETTING
+        )
 
     @pytest.mark.asyncio
-    async def test_arb_off(self, mock_driver, mock_scpi_socket):
+    async def test_arb_off(self, mock_driver, mock_scpi_transport):
         """Test disabling ARB generator."""
         await mock_driver.arb_off()
-        mock_scpi_socket.send.assert_called_with("SOURce1:BB:ARBitrary:STATe OFF")
+        mock_scpi_transport.send.assert_called_with(
+            "SOURce1:BB:ARBitrary:STATe OFF", idempotency=Idempotency.SETTING
+        )
 
     @pytest.mark.asyncio
-    async def test_load_waveform(self, mock_driver, mock_scpi_socket):
+    async def test_load_waveform(self, mock_driver, mock_scpi_transport):
         """Test loading waveform."""
         await mock_driver.load_waveform("/var/user/waveform/test.wv")
-        calls = [str(c) for c in mock_scpi_socket.send.call_args_list]
+        calls = [str(c) for c in mock_scpi_transport.send.call_args_list]
         assert any("WAVeform:SELect" in c for c in calls)
 
     @pytest.mark.asyncio
-    async def test_arb_on_unsupported(self, mock_driver, mock_scpi_socket):
+    async def test_arb_on_unsupported(self, mock_driver, mock_scpi_transport):
         """Test ARB on unsupported instrument."""
         mock_driver._info = InstrumentInfo(
             manufacturer="Rohde&Schwarz",
@@ -236,19 +258,23 @@ class TestRSSignalGeneratorDriverReference:
     """Test reference oscillator methods."""
 
     @pytest.mark.asyncio
-    async def test_set_reference_internal(self, mock_driver, mock_scpi_socket):
+    async def test_set_reference_internal(self, mock_driver, mock_scpi_transport):
         """Test setting internal reference."""
         await mock_driver.set_reference_source("INTernal")
-        mock_scpi_socket.send.assert_called_with("SOURce1:ROSCillator:SOURce INTernal")
+        mock_scpi_transport.send.assert_called_with(
+            "SOURce1:ROSCillator:SOURce INTernal", idempotency=Idempotency.SETTING
+        )
 
     @pytest.mark.asyncio
-    async def test_set_reference_external(self, mock_driver, mock_scpi_socket):
+    async def test_set_reference_external(self, mock_driver, mock_scpi_transport):
         """Test setting external reference."""
         await mock_driver.set_reference_source("EXTernal")
-        mock_scpi_socket.send.assert_called_with("SOURce1:ROSCillator:SOURce EXTernal")
+        mock_scpi_transport.send.assert_called_with(
+            "SOURce1:ROSCillator:SOURce EXTernal", idempotency=Idempotency.SETTING
+        )
 
     @pytest.mark.asyncio
-    async def test_set_reference_invalid(self, mock_driver, mock_scpi_socket):
+    async def test_set_reference_invalid(self, mock_driver, mock_scpi_transport):
         """Test setting invalid reference source."""
         with pytest.raises(ValueError):
             await mock_driver.set_reference_source("INVALID")
@@ -258,32 +284,34 @@ class TestRSSignalGeneratorDriverReset:
     """Test reset and preset methods."""
 
     @pytest.mark.asyncio
-    async def test_reset(self, mock_driver, mock_scpi_socket):
+    async def test_reset(self, mock_driver, mock_scpi_transport):
         """Test instrument reset."""
         mock_driver._rf_output_on = True
         mock_driver._frequency_hz = 1e9
         await mock_driver.reset()
-        mock_scpi_socket.send.assert_called_with("*RST")
+        mock_scpi_transport.send.assert_called_with("*RST", idempotency=Idempotency.ACTION)
         assert mock_driver._rf_output_on is False
         assert mock_driver._frequency_hz is None
 
     @pytest.mark.asyncio
-    async def test_preset(self, mock_driver, mock_scpi_socket):
+    async def test_preset(self, mock_driver, mock_scpi_transport):
         """Test instrument preset."""
         await mock_driver.preset()
-        mock_scpi_socket.send.assert_called_with("SYSTem:PRESet")
+        mock_scpi_transport.send.assert_called_with(
+            "SYSTem:PRESet", idempotency=Idempotency.ACTION
+        )
 
     @pytest.mark.asyncio
-    async def test_get_errors_no_errors(self, mock_driver, mock_scpi_socket):
+    async def test_get_errors_no_errors(self, mock_driver, mock_scpi_transport):
         """Test querying errors when none exist."""
-        mock_scpi_socket.query.return_value = '0,"No error"'
+        mock_scpi_transport.query.return_value = '0,"No error"'
         errors = await mock_driver.get_errors()
         assert errors == []
 
     @pytest.mark.asyncio
-    async def test_get_errors_with_errors(self, mock_driver, mock_scpi_socket):
+    async def test_get_errors_with_errors(self, mock_driver, mock_scpi_transport):
         """Test querying errors when errors exist."""
-        mock_scpi_socket.query.side_effect = [
+        mock_scpi_transport.query.side_effect = [
             '-100,"Command error"',
             '0,"No error"',
         ]
@@ -319,14 +347,14 @@ class TestRSSignalGeneratorDriverSCPI:
     """Test raw SCPI access."""
 
     @pytest.mark.asyncio
-    async def test_scpi_send(self, mock_driver, mock_scpi_socket):
+    async def test_scpi_send(self, mock_driver, mock_scpi_transport):
         """Test raw SCPI send."""
         await mock_driver.scpi_send("*RST")
-        mock_scpi_socket.send.assert_called_with("*RST")
+        mock_scpi_transport.send.assert_called_with("*RST", idempotency=Idempotency.ACTION)
 
     @pytest.mark.asyncio
-    async def test_scpi_query(self, mock_driver, mock_scpi_socket):
+    async def test_scpi_query(self, mock_driver, mock_scpi_transport):
         """Test raw SCPI query."""
-        mock_scpi_socket.query.return_value = "1000000000"
+        mock_scpi_transport.query.return_value = "1000000000"
         response = await mock_driver.scpi_query("SOURce1:FREQuency:CW?")
         assert response == "1000000000"

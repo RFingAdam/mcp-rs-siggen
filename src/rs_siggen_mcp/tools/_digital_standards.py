@@ -3,6 +3,7 @@
 from typing import Any
 
 from mcp.types import CallToolResult, Tool
+from scpi_core import Idempotency
 
 from . import _common
 
@@ -14,13 +15,18 @@ async def handle_configure_lte(
     sg = await _common._get_siggen(host, port)
     bw = arguments["bandwidth_mhz"]
     duplex = _common.sanitize_scpi_param(arguments.get("duplex_mode", "FDD"))
-    await sg.scpi_send("SOURce1:BB:EUTRa:PRESet")
+    # A subsystem PRESet discards the whole baseband configuration, so a retry
+    # after a hiccup would wipe the settings sent below it. ACTION.
+    await sg.scpi_send("SOURce1:BB:EUTRa:PRESet", idempotency=Idempotency.ACTION)
     await sg.scpi_send(
         f"SOURce1:BB:EUTRa:DL:BW BW{bw:.0f}_00" if bw != 1.4
-        else "SOURce1:BB:EUTRa:DL:BW BW1_40"
+        else "SOURce1:BB:EUTRa:DL:BW BW1_40",
+        idempotency=Idempotency.SETTING,
     )
-    await sg.scpi_send(f"SOURce1:BB:EUTRa:DUPLex {duplex}")
-    await sg.scpi_send("SOURce1:BB:EUTRa:STATe ON")
+    await sg.scpi_send(
+        f"SOURce1:BB:EUTRa:DUPLex {duplex}", idempotency=Idempotency.SETTING
+    )
+    await sg.scpi_send("SOURce1:BB:EUTRa:STATe ON", idempotency=Idempotency.SETTING)
     return _common._format_result({
         "status": "configured",
         "standard": "LTE",
@@ -36,10 +42,16 @@ async def handle_configure_5gnr(
     sg = await _common._get_siggen(host, port)
     bw = arguments["bandwidth_mhz"]
     scs = arguments.get("subcarrier_spacing_khz", 30)
-    await sg.scpi_send("SOURce1:BB:NR5G:PRESet")
-    await sg.scpi_send(f"SOURce1:BB:NR5G:SCHed:CELL1:SUBF0:BWP0:RBNUmber {bw}")
-    await sg.scpi_send(f"SOURce1:BB:NR5G:SCHed:CELL1:SUBF0:BWP0:SCSPacing SCS{scs}")
-    await sg.scpi_send("SOURce1:BB:NR5G:STATe ON")
+    await sg.scpi_send("SOURce1:BB:NR5G:PRESet", idempotency=Idempotency.ACTION)
+    await sg.scpi_send(
+        f"SOURce1:BB:NR5G:SCHed:CELL1:SUBF0:BWP0:RBNUmber {bw}",
+        idempotency=Idempotency.SETTING,
+    )
+    await sg.scpi_send(
+        f"SOURce1:BB:NR5G:SCHed:CELL1:SUBF0:BWP0:SCSPacing SCS{scs}",
+        idempotency=Idempotency.SETTING,
+    )
+    await sg.scpi_send("SOURce1:BB:NR5G:STATe ON", idempotency=Idempotency.SETTING)
     return _common._format_result({
         "status": "configured",
         "standard": "5G NR",
@@ -55,15 +67,19 @@ async def handle_configure_wlan(
     sg = await _common._get_siggen(host, port)
     standard = _common.sanitize_scpi_param(arguments["standard"])
     bw = arguments.get("bandwidth_mhz", 20)
-    await sg.scpi_send("SOURce1:BB:WLNN:PRESet")
+    await sg.scpi_send("SOURce1:BB:WLNN:PRESet", idempotency=Idempotency.ACTION)
     std_map = {
         "802.11a": "A", "802.11b": "B", "802.11g": "G",
         "802.11n": "N", "802.11ac": "AC", "802.11ax": "AX",
     }
     std_val = std_map.get(standard, "AX")
-    await sg.scpi_send(f"SOURce1:BB:WLNN:FBLock1:STANdard {std_val}")
-    await sg.scpi_send(f"SOURce1:BB:WLNN:FBLock1:BW BW{bw}")
-    await sg.scpi_send("SOURce1:BB:WLNN:STATe ON")
+    await sg.scpi_send(
+        f"SOURce1:BB:WLNN:FBLock1:STANdard {std_val}", idempotency=Idempotency.SETTING
+    )
+    await sg.scpi_send(
+        f"SOURce1:BB:WLNN:FBLock1:BW BW{bw}", idempotency=Idempotency.SETTING
+    )
+    await sg.scpi_send("SOURce1:BB:WLNN:STATe ON", idempotency=Idempotency.SETTING)
     return _common._format_result({
         "status": "configured",
         "standard": f"WLAN {standard}",
@@ -77,9 +93,11 @@ async def handle_configure_bluetooth(
     """Configure Bluetooth signal generation."""
     sg = await _common._get_siggen(host, port)
     mode = _common.sanitize_scpi_param(arguments.get("mode", "LE"))
-    await sg.scpi_send("SOURce1:BB:BTOoth:PRESet")
-    await sg.scpi_send(f"SOURce1:BB:BTOoth:PACKet:TYPE {mode}")
-    await sg.scpi_send("SOURce1:BB:BTOoth:STATe ON")
+    await sg.scpi_send("SOURce1:BB:BTOoth:PRESet", idempotency=Idempotency.ACTION)
+    await sg.scpi_send(
+        f"SOURce1:BB:BTOoth:PACKet:TYPE {mode}", idempotency=Idempotency.SETTING
+    )
+    await sg.scpi_send("SOURce1:BB:BTOoth:STATe ON", idempotency=Idempotency.SETTING)
     return _common._format_result({
         "status": "configured",
         "standard": "Bluetooth",
@@ -92,7 +110,11 @@ async def handle_generate_waveform(
 ) -> CallToolResult:
     """Generate and calculate digital standard waveform."""
     sg = await _common._get_siggen(host, port)
-    await sg.scpi_send("SOURce1:BB:ARBitrary:TRIGger:EXECute")
+    # A trigger execute starts a waveform calculation. Duplicating it is exactly
+    # the class of retry ACTION exists to forbid.
+    await sg.scpi_send(
+        "SOURce1:BB:ARBitrary:TRIGger:EXECute", idempotency=Idempotency.ACTION
+    )
     await sg.wait_opc(timeout=120.0)
     return _common._format_result({"status": "waveform_generated"})
 

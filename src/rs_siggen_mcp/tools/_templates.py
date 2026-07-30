@@ -3,6 +3,7 @@
 from typing import Any
 
 from mcp.types import CallToolResult, Tool
+from scpi_core import Idempotency
 
 from ..templates import (
     CWSignalTemplate,
@@ -174,19 +175,19 @@ async def handle_apply_template(
     if mod.get("am_enabled"):
         await sg.configure_am(mod.get("am_depth_percent", 80.0), enable=True)
     else:
-        await sg.scpi_send("SOURce1:AM:STATe OFF")
+        await sg.scpi_send("SOURce1:AM:STATe OFF", idempotency=Idempotency.SETTING)
 
     # FM modulation
     if mod.get("fm_enabled"):
         await sg.configure_fm(mod.get("fm_deviation_hz", 75000.0), enable=True)
     else:
-        await sg.scpi_send("SOURce1:FM:STATe OFF")
+        await sg.scpi_send("SOURce1:FM:STATe OFF", idempotency=Idempotency.SETTING)
 
     # PM modulation
     if mod.get("pm_enabled"):
         await sg.configure_pm(mod.get("pm_deviation_rad", 1.0), enable=True)
     else:
-        await sg.scpi_send("SOURce1:PM:STATe OFF")
+        await sg.scpi_send("SOURce1:PM:STATe OFF", idempotency=Idempotency.SETTING)
 
     # Pulse modulation
     if mod.get("pulse_enabled"):
@@ -196,13 +197,13 @@ async def handle_apply_template(
             enable=True,
         )
     else:
-        await sg.scpi_send("SOURce1:PULM:STATe OFF")
+        await sg.scpi_send("SOURce1:PULM:STATe OFF", idempotency=Idempotency.SETTING)
 
     # IQ modulation
     if mod.get("iq_enabled"):
         await sg.iq_on()
     else:
-        await sg.scpi_send("SOURce:IQ:STATe OFF")
+        await sg.scpi_send("SOURce:IQ:STATe OFF", idempotency=Idempotency.SETTING)
 
     if template.output_enabled:
         await sg.output_on()

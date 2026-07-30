@@ -1,9 +1,34 @@
-"""Safety validators for signal generator parameters."""
+"""Safety validators for signal generator parameters.
+
+The SCPI-injection and path-containment *logic* moved to :mod:`scpi_core.safety`,
+where one copy replaces what were three near-verbatim variants across the R&S
+servers. The two functions below stay as thin adapters because the *wording* of
+the refusal is this server's user-facing contract -- ``tests/test_security.py``
+pins each phrase, and the three servers' phrasings had already diverged, so they
+cannot be unified without changing behaviour those tests deliberately assert.
+
+The split is: the core decides *which rule* fired and reports it as data on the
+exception; this module renders that rule in this server's historical words. The
+core's ``ScpiParamError`` / ``UnsafePathError`` already subclass ``ValueError``,
+so re-raising as ``ValueError`` keeps the declared contract exact.
+
+``SafetyLimits`` and ``SafetyValidator`` below are instrument-specific -- power,
+frequency, AM depth and FM deviation envelopes for a signal generator -- and stay
+here.
+"""
 
 import logging
-import re
 from dataclasses import dataclass
 from pathlib import Path
+
+from scpi_core.safety import (
+    PathRule,
+    ScpiParamError,
+    ScpiParamRule,
+    UnsafePathError,
+    check_safe_path,
+    check_scpi_param,
+)
 
 from ..exceptions import SafetyError
 
@@ -13,9 +38,6 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # SCPI Parameter Sanitizer (Issue 1)
 # =============================================================================
-
-# Characters that can be used for SCPI command injection
-_SCPI_DANGEROUS_CHARS = re.compile(r"[;\n\r]")
 
 
 def sanitize_scpi_param(value: str) -> str:
@@ -40,27 +62,25 @@ def sanitize_scpi_param(value: str) -> str:
     Raises:
         ValueError: If the string contains dangerous SCPI metacharacters
     """
-    if not isinstance(value, str):
-        raise ValueError(f"Expected string parameter, got {type(value).__name__}")
+    try:
+        return check_scpi_param(value)
+    except ScpiParamError as e:
+        raise ValueError(_scpi_param_message(e)) from e
 
-    # Check for SCPI command separator and newline injection
-    match = _SCPI_DANGEROUS_CHARS.search(value)
-    if match:
-        char = match.group()
-        char_repr = repr(char)
-        raise ValueError(
+
+def _scpi_param_message(e: ScpiParamError) -> str:
+    """Render a core refusal in this server's historical wording."""
+    if e.rule is ScpiParamRule.NOT_A_STRING:
+        return f"Expected string parameter, got {e.type_name}"
+    if e.rule is ScpiParamRule.DANGEROUS_CHARACTER:
+        return (
             f"SCPI injection detected: parameter contains forbidden character "
-            f"{char_repr} at position {match.start()}"
+            f"{e.character!r} at position {e.position}"
         )
-
-    # Check for leading * which could trigger IEEE 488.2 common commands
-    if value.lstrip().startswith("*"):
-        raise ValueError(
-            "SCPI injection detected: parameter starts with '*' which could "
-            "trigger instrument common commands (e.g., *RST, *CLS)"
-        )
-
-    return value
+    return (
+        "SCPI injection detected: parameter starts with '*' which could "
+        "trigger instrument common commands (e.g., *RST, *CLS)"
+    )
 
 
 # =============================================================================
@@ -90,36 +110,23 @@ def validate_safe_path(user_path: str | Path, base_dir: str | Path) -> Path:
     Raises:
         ValueError: If the path escapes the base directory or is otherwise unsafe
     """
-    base_dir = Path(base_dir).resolve()
-    user_path = Path(user_path)
+    try:
+        return check_safe_path(user_path, base_dir)
+    except UnsafePathError as e:
+        raise ValueError(_unsafe_path_message(e)) from e
 
-    # If user_path is not absolute, treat it as relative to base_dir
-    if not user_path.is_absolute():
-        resolved = (base_dir / user_path).resolve()
-    else:
-        resolved = user_path.resolve()
 
-    # Check that the resolved path is within the base directory
-    if not resolved.is_relative_to(base_dir):
-        raise ValueError(
-            f"Path traversal detected: resolved path '{resolved}' is outside "
-            f"the allowed base directory '{base_dir}'"
+def _unsafe_path_message(e: UnsafePathError) -> str:
+    """Render a core refusal in this server's historical wording."""
+    if e.rule is PathRule.TRAVERSAL:
+        return (
+            f"Path traversal detected: resolved path '{e.resolved}' is outside "
+            f"the allowed base directory '{e.base}'"
         )
-
-    # Check if any component of the path is a symlink pointing outside base_dir
-    # Walk up from the resolved path to check each existing component
-    check_path = resolved
-    while check_path != base_dir and check_path != check_path.parent:
-        if check_path.is_symlink():
-            link_target = check_path.resolve()
-            if not link_target.is_relative_to(base_dir):
-                raise ValueError(
-                    f"Symlink attack detected: '{check_path}' points to "
-                    f"'{link_target}' which is outside the allowed base directory"
-                )
-        check_path = check_path.parent
-
-    return resolved
+    return (
+        f"Symlink attack detected: '{e.link}' points to "
+        f"'{e.target}' which is outside the allowed base directory"
+    )
 
 
 @dataclass

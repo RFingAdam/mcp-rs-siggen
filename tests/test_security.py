@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch  # noqa: F401
 
 import pytest
+from scpi_core import Idempotency
 
 from rs_siggen_mcp.safety.validators import sanitize_scpi_param, validate_safe_path
 
@@ -507,12 +508,12 @@ class TestDriverSanitization:
     """Test that the driver sanitizes string parameters."""
 
     @pytest.mark.asyncio
-    async def test_load_waveform_injection_blocked(self, mock_scpi_socket):
+    async def test_load_waveform_injection_blocked(self, mock_scpi_transport):
         """Test that SCPI injection in waveform path is blocked by driver."""
         from rs_siggen_mcp.driver.siggen_driver import RSSignalGeneratorDriver
 
         driver = RSSignalGeneratorDriver.__new__(RSSignalGeneratorDriver)
-        driver._scpi = mock_scpi_socket
+        driver._scpi = mock_scpi_transport
         driver._safety = MagicMock()
         driver._rf_output_on = False
         driver._frequency_hz = None
@@ -524,12 +525,12 @@ class TestDriverSanitization:
             await driver.load_waveform("/var/user/wave;*RST")
 
     @pytest.mark.asyncio
-    async def test_load_waveform_clean_path_passes(self, mock_scpi_socket):
+    async def test_load_waveform_clean_path_passes(self, mock_scpi_transport):
         """Test that clean waveform paths work."""
         from rs_siggen_mcp.driver.siggen_driver import RSSignalGeneratorDriver
 
         driver = RSSignalGeneratorDriver.__new__(RSSignalGeneratorDriver)
-        driver._scpi = mock_scpi_socket
+        driver._scpi = mock_scpi_transport
         driver._safety = MagicMock()
         driver._rf_output_on = False
         driver._frequency_hz = None
@@ -538,6 +539,7 @@ class TestDriverSanitization:
         driver._info.family.has_arb_generator = True
 
         await driver.load_waveform("/var/user/waveform/test.wv")
-        mock_scpi_socket.send.assert_called_once_with(
-            "SOURce1:BB:ARBitrary:WAVeform:SELect '/var/user/waveform/test.wv'"
+        mock_scpi_transport.send.assert_called_once_with(
+            "SOURce1:BB:ARBitrary:WAVeform:SELect '/var/user/waveform/test.wv'",
+            idempotency=Idempotency.SETTING,
         )

@@ -7,6 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from scpi_core import Idempotency
+
 if TYPE_CHECKING:
     from .driver.siggen_driver import RSSignalGeneratorDriver
 
@@ -253,9 +255,13 @@ class StateManager:
             Captured InstrumentState
         """
         # Query current RF settings
-        freq = await driver.scpi_query("SOURce1:FREQuency:CW?")
-        power = await driver.scpi_query("SOURce1:POWer?")
-        output = await driver.scpi_query("OUTPut1:STATe?")
+        freq = await driver.scpi_query(
+            "SOURce1:FREQuency:CW?", idempotency=Idempotency.QUERY
+        )
+        power = await driver.scpi_query("SOURce1:POWer?", idempotency=Idempotency.QUERY)
+        output = await driver.scpi_query(
+            "OUTPut1:STATe?", idempotency=Idempotency.QUERY
+        )
 
         rf = RFState(
             frequency_hz=float(freq),
@@ -266,52 +272,74 @@ class StateManager:
         # Query modulation states
         mod = ModulationState()
         try:
-            am_state = await driver.scpi_query("SOURce1:AM:STATe?")
+            am_state = await driver.scpi_query(
+                "SOURce1:AM:STATe?", idempotency=Idempotency.QUERY
+            )
             mod.am_enabled = am_state.strip() in ("1", "ON")
             if mod.am_enabled:
-                am_depth = await driver.scpi_query("SOURce1:AM:DEPTh?")
+                am_depth = await driver.scpi_query(
+                    "SOURce1:AM:DEPTh?", idempotency=Idempotency.QUERY
+                )
                 mod.am_depth_percent = float(am_depth)
         except (OSError, ValueError) as e:
             logger.debug("Could not query AM state: %s", e)
 
         try:
-            fm_state = await driver.scpi_query("SOURce1:FM:STATe?")
+            fm_state = await driver.scpi_query(
+                "SOURce1:FM:STATe?", idempotency=Idempotency.QUERY
+            )
             mod.fm_enabled = fm_state.strip() in ("1", "ON")
             if mod.fm_enabled:
-                fm_dev = await driver.scpi_query("SOURce1:FM:DEViation?")
+                fm_dev = await driver.scpi_query(
+                    "SOURce1:FM:DEViation?", idempotency=Idempotency.QUERY
+                )
                 mod.fm_deviation_hz = float(fm_dev)
         except (OSError, ValueError) as e:
             logger.debug("Could not query FM state: %s", e)
 
         try:
-            pm_state = await driver.scpi_query("SOURce1:PM:STATe?")
+            pm_state = await driver.scpi_query(
+                "SOURce1:PM:STATe?", idempotency=Idempotency.QUERY
+            )
             mod.pm_enabled = pm_state.strip() in ("1", "ON")
             if mod.pm_enabled:
-                pm_dev = await driver.scpi_query("SOURce1:PM:DEViation?")
+                pm_dev = await driver.scpi_query(
+                    "SOURce1:PM:DEViation?", idempotency=Idempotency.QUERY
+                )
                 mod.pm_deviation_rad = float(pm_dev)
         except (OSError, ValueError) as e:
             logger.debug("Could not query PM state: %s", e)
 
         try:
-            pulse_state = await driver.scpi_query("SOURce1:PULM:STATe?")
+            pulse_state = await driver.scpi_query(
+                "SOURce1:PULM:STATe?", idempotency=Idempotency.QUERY
+            )
             mod.pulse_enabled = pulse_state.strip() in ("1", "ON")
             if mod.pulse_enabled:
-                pulse_w = await driver.scpi_query("SOURce1:PULM:WIDTh?")
+                pulse_w = await driver.scpi_query(
+                    "SOURce1:PULM:WIDTh?", idempotency=Idempotency.QUERY
+                )
                 mod.pulse_width_s = float(pulse_w)
-                pulse_p = await driver.scpi_query("SOURce1:PULM:PERiod?")
+                pulse_p = await driver.scpi_query(
+                    "SOURce1:PULM:PERiod?", idempotency=Idempotency.QUERY
+                )
                 mod.pulse_period_s = float(pulse_p)
         except (OSError, ValueError) as e:
             logger.debug("Could not query pulse state: %s", e)
 
         try:
-            iq_state = await driver.scpi_query("SOURce:IQ:STATe?")
+            iq_state = await driver.scpi_query(
+                "SOURce:IQ:STATe?", idempotency=Idempotency.QUERY
+            )
             mod.iq_enabled = iq_state.strip() in ("1", "ON")
         except (OSError, ValueError) as e:
             logger.debug("Could not query IQ state: %s", e)
 
         # Query reference source
         try:
-            ref = await driver.scpi_query("SOURce1:ROSCillator:SOURce?")
+            ref = await driver.scpi_query(
+                "SOURce1:ROSCillator:SOURce?", idempotency=Idempotency.QUERY
+            )
             reference_source = ref.strip()
         except (OSError, ValueError) as e:
             logger.debug("Could not query reference source: %s", e)
@@ -350,17 +378,23 @@ class StateManager:
         if state.modulation.am_enabled and state.modulation.am_depth_percent is not None:
             await driver.configure_am(state.modulation.am_depth_percent, enable=True)
         else:
-            await driver.scpi_send("SOURce1:AM:STATe OFF")
+            await driver.scpi_send(
+                "SOURce1:AM:STATe OFF", idempotency=Idempotency.SETTING
+            )
 
         if state.modulation.fm_enabled and state.modulation.fm_deviation_hz is not None:
             await driver.configure_fm(state.modulation.fm_deviation_hz, enable=True)
         else:
-            await driver.scpi_send("SOURce1:FM:STATe OFF")
+            await driver.scpi_send(
+                "SOURce1:FM:STATe OFF", idempotency=Idempotency.SETTING
+            )
 
         if state.modulation.pm_enabled and state.modulation.pm_deviation_rad is not None:
             await driver.configure_pm(state.modulation.pm_deviation_rad, enable=True)
         else:
-            await driver.scpi_send("SOURce1:PM:STATe OFF")
+            await driver.scpi_send(
+                "SOURce1:PM:STATe OFF", idempotency=Idempotency.SETTING
+            )
 
         if state.modulation.pulse_enabled and state.modulation.pulse_width_s is not None:
             await driver.configure_pulse(
@@ -369,12 +403,16 @@ class StateManager:
                 enable=True,
             )
         else:
-            await driver.scpi_send("SOURce1:PULM:STATe OFF")
+            await driver.scpi_send(
+                "SOURce1:PULM:STATe OFF", idempotency=Idempotency.SETTING
+            )
 
         if state.modulation.iq_enabled:
             await driver.iq_on()
         else:
-            await driver.scpi_send("SOURce:IQ:STATe OFF")
+            await driver.scpi_send(
+                "SOURce:IQ:STATe OFF", idempotency=Idempotency.SETTING
+            )
 
         # Restore reference source
         await driver.set_reference_source(state.reference_source)

@@ -1,12 +1,30 @@
-"""High-level driver for R&S signal generators."""
+"""High-level driver for R&S signal generators.
+
+The transport comes from :func:`scpi_core.transport.factory.create_transport`
+rather than a socket class owned by this package. That swap is a correctness fix,
+not tidying: the transport this driver used to carry took its lock separately for
+the send and the read of a query, so two concurrent tool calls could each receive
+the other's answer, and it had no notion of desync -- after one read timeout every
+later query returned the *previous* query's response, forever, with no error.
+
+Every call below therefore states an :class:`~scpi_core.Idempotency`. It decides
+whether the transport may re-send after a failure, and getting it wrong is not a
+style question: re-sending ``OUTPut1:STATe ON`` is harmless, but re-sending a
+``*RST`` or a calibration wipes work the caller already did. Value assignments are
+SETTING (re-assigning the same value is a no-op), reads are QUERY, and anything
+that transitions state -- reset, preset, RF output, calibration -- is ACTION and is
+never retried.
+"""
 
 import logging
 from typing import Any
 
+from scpi_core import Idempotency, SCPITransport
+from scpi_core.transport.factory import create_transport
+
 from ..exceptions import ConfigurationError
 from ..models.siggen_types import InstrumentInfo, SignalGeneratorFamily
 from ..safety.validators import SafetyLimits, SafetyValidator, sanitize_scpi_param
-from .scpi_socket import SCPISocket
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +65,7 @@ class RSSignalGeneratorDriver:
             command_timeout: Command timeout
             safety_limits: Safety limits for validation
         """
-        self._scpi = SCPISocket(
+        self._scpi: SCPITransport = create_transport(
             host=host,
             port=port,
             timeout=timeout,
@@ -116,14 +134,14 @@ class RSSignalGeneratorDriver:
         Returns:
             InstrumentInfo parsed from *IDN? response
         """
-        idn = await self._scpi.query("*IDN?")
+        idn = await self._scpi.query("*IDN?", idempotency=Idempotency.QUERY)
         info = InstrumentInfo.from_idn(idn)
         self._info = info
         return info
 
     async def reset(self) -> None:
         """Reset instrument to default state (*RST)."""
-        await self._scpi.send("*RST")
+        await self._scpi.send("*RST", idempotency=Idempotency.ACTION)
         await self._scpi.wait_opc()
         self._rf_output_on = False
         self._frequency_hz = None
@@ -132,7 +150,7 @@ class RSSignalGeneratorDriver:
 
     async def preset(self) -> None:
         """Preset instrument (SYSTem:PRESet)."""
-        await self._scpi.send("SYSTem:PRESet")
+        await self._scpi.send("SYSTem:PRESet", idempotency=Idempotency.ACTION)
         await self._scpi.wait_opc()
         self._rf_output_on = False
         self._frequency_hz = None
@@ -148,7 +166,9 @@ class RSSignalGeneratorDriver:
         """
         errors = []
         while True:
-            response = await self._scpi.query("SYSTem:ERRor?")
+            response = await self._scpi.query(
+                "SYSTem:ERRor?", idempotency=Idempotency.QUERY
+            )
             # R&S format: <code>,\"<message>\"
             if response.startswith("0,") or response.startswith("+0,"):
                 break
@@ -170,7 +190,9 @@ class RSSignalGeneratorDriver:
             SafetyError: If frequency exceeds limits
         """
         self._safety.validate_frequency(frequency_hz)
-        await self._scpi.send(f"SOURce1:FREQuency:CW {frequency_hz}")
+        await self._scpi.send(
+            f"SOURce1:FREQuency:CW {frequency_hz}", idempotency=Idempotency.SETTING
+        )
         self._frequency_hz = frequency_hz
         logger.info(f"Frequency set to {frequency_hz/1e6:.6f} MHz")
 
@@ -181,7 +203,9 @@ class RSSignalGeneratorDriver:
         Returns:
             Frequency in Hz
         """
-        response = await self._scpi.query("SOURce1:FREQuency:CW?")
+        response = await self._scpi.query(
+            "SOURce1:FREQuency:CW?", idempotency=Idempotency.QUERY
+        )
         freq = float(response)
         self._frequency_hz = freq
         return freq
@@ -197,7 +221,10 @@ class RSSignalGeneratorDriver:
             SafetyError: If power exceeds limits
         """
         self._safety.validate_power(power_dbm)
-        await self._scpi.send(f"SOURce1:POWer:LEVel:IMMediate:AMPLitude {power_dbm}")
+        await self._scpi.send(
+            f"SOURce1:POWer:LEVel:IMMediate:AMPLitude {power_dbm}",
+            idempotency=Idempotency.SETTING,
+        )
         self._power_dbm = power_dbm
         logger.info(f"Power set to {power_dbm} dBm")
 
@@ -208,20 +235,25 @@ class RSSignalGeneratorDriver:
         Returns:
             Power in dBm
         """
-        response = await self._scpi.query("SOURce1:POWer?")
+        response = await self._scpi.query("SOURce1:POWer?", idempotency=Idempotency.QUERY)
         power = float(response)
         self._power_dbm = power
         return power
 
     async def output_on(self) -> None:
-        """Enable RF output."""
-        await self._scpi.send("OUTPut1:STATe ON")
+        """Enable RF output.
+
+        ACTION, not SETTING: a retry after a transport hiccup could energise the
+        output a second time when the caller has already been told the first
+        attempt failed. Nothing may radiate on a guess.
+        """
+        await self._scpi.send("OUTPut1:STATe ON", idempotency=Idempotency.ACTION)
         self._rf_output_on = True
         logger.info("RF output ON")
 
     async def output_off(self) -> None:
         """Disable RF output (safe state)."""
-        await self._scpi.send("OUTPut1:STATe OFF")
+        await self._scpi.send("OUTPut1:STATe OFF", idempotency=Idempotency.ACTION)
         self._rf_output_on = False
         logger.info("RF output OFF")
 
@@ -232,7 +264,7 @@ class RSSignalGeneratorDriver:
         Returns:
             True if output is enabled
         """
-        response = await self._scpi.query("OUTPut1:STATe?")
+        response = await self._scpi.query("OUTPut1:STATe?", idempotency=Idempotency.QUERY)
         state = response.strip() in ("1", "ON")
         self._rf_output_on = state
         return state
@@ -244,7 +276,9 @@ class RSSignalGeneratorDriver:
         Args:
             phase_deg: Phase in degrees
         """
-        await self._scpi.send(f"SOURce1:PHASe {phase_deg}")
+        await self._scpi.send(
+            f"SOURce1:PHASe {phase_deg}", idempotency=Idempotency.SETTING
+        )
         logger.info(f"Phase set to {phase_deg} deg")
 
     # =========================================================================
@@ -260,8 +294,13 @@ class RSSignalGeneratorDriver:
             enable: Enable AM modulation
         """
         self._safety.validate_modulation_depth(depth_percent)
-        await self._scpi.send(f"SOURce1:AM:DEPTh {depth_percent}")
-        await self._scpi.send(f"SOURce1:AM:STATe {'ON' if enable else 'OFF'}")
+        await self._scpi.send(
+            f"SOURce1:AM:DEPTh {depth_percent}", idempotency=Idempotency.SETTING
+        )
+        await self._scpi.send(
+            f"SOURce1:AM:STATe {'ON' if enable else 'OFF'}",
+            idempotency=Idempotency.SETTING,
+        )
         logger.info(f"AM: depth={depth_percent}%, enabled={enable}")
 
     async def configure_fm(self, deviation_hz: float, enable: bool = True) -> None:
@@ -273,8 +312,13 @@ class RSSignalGeneratorDriver:
             enable: Enable FM modulation
         """
         self._safety.validate_deviation(deviation_hz)
-        await self._scpi.send(f"SOURce1:FM:DEViation {deviation_hz}")
-        await self._scpi.send(f"SOURce1:FM:STATe {'ON' if enable else 'OFF'}")
+        await self._scpi.send(
+            f"SOURce1:FM:DEViation {deviation_hz}", idempotency=Idempotency.SETTING
+        )
+        await self._scpi.send(
+            f"SOURce1:FM:STATe {'ON' if enable else 'OFF'}",
+            idempotency=Idempotency.SETTING,
+        )
         logger.info(f"FM: deviation={deviation_hz/1e3:.3f} kHz, enabled={enable}")
 
     async def configure_pm(self, deviation_rad: float, enable: bool = True) -> None:
@@ -287,8 +331,13 @@ class RSSignalGeneratorDriver:
         """
         if deviation_rad < 0:
             raise ValueError(f"PM deviation {deviation_rad} rad must be positive")
-        await self._scpi.send(f"SOURce1:PM:DEViation {deviation_rad}")
-        await self._scpi.send(f"SOURce1:PM:STATe {'ON' if enable else 'OFF'}")
+        await self._scpi.send(
+            f"SOURce1:PM:DEViation {deviation_rad}", idempotency=Idempotency.SETTING
+        )
+        await self._scpi.send(
+            f"SOURce1:PM:STATe {'ON' if enable else 'OFF'}",
+            idempotency=Idempotency.SETTING,
+        )
         logger.info(f"PM: deviation={deviation_rad} rad, enabled={enable}")
 
     async def configure_pulse(
@@ -306,15 +355,24 @@ class RSSignalGeneratorDriver:
             enable: Enable pulse modulation
         """
         self._safety.validate_pulse_width(width_s, period_s)
-        await self._scpi.send(f"SOURce1:PULM:WIDTh {width_s}")
+        await self._scpi.send(
+            f"SOURce1:PULM:WIDTh {width_s}", idempotency=Idempotency.SETTING
+        )
         if period_s is not None:
-            await self._scpi.send(f"SOURce1:PULM:PERiod {period_s}")
-        await self._scpi.send(f"SOURce1:PULM:STATe {'ON' if enable else 'OFF'}")
+            await self._scpi.send(
+                f"SOURce1:PULM:PERiod {period_s}", idempotency=Idempotency.SETTING
+            )
+        await self._scpi.send(
+            f"SOURce1:PULM:STATe {'ON' if enable else 'OFF'}",
+            idempotency=Idempotency.SETTING,
+        )
         logger.info(f"Pulse: width={width_s*1e6:.1f} us, enabled={enable}")
 
     async def modulation_all_off(self) -> None:
         """Turn off all modulations."""
-        await self._scpi.send("SOURce:MODulation:ALL:STATe OFF")
+        await self._scpi.send(
+            "SOURce:MODulation:ALL:STATe OFF", idempotency=Idempotency.SETTING
+        )
         logger.info("All modulations OFF")
 
     # =========================================================================
@@ -328,12 +386,12 @@ class RSSignalGeneratorDriver:
                 f"{self._info.model} does not support IQ modulation",
                 self.address,
             )
-        await self._scpi.send("SOURce:IQ:STATe ON")
+        await self._scpi.send("SOURce:IQ:STATe ON", idempotency=Idempotency.SETTING)
         logger.info("IQ modulation ON")
 
     async def iq_off(self) -> None:
         """Disable IQ modulation."""
-        await self._scpi.send("SOURce:IQ:STATe OFF")
+        await self._scpi.send("SOURce:IQ:STATe OFF", idempotency=Idempotency.SETTING)
         logger.info("IQ modulation OFF")
 
     # =========================================================================
@@ -353,7 +411,10 @@ class RSSignalGeneratorDriver:
                 self.address,
             )
         sanitize_scpi_param(waveform_path)
-        await self._scpi.send(f"SOURce1:BB:ARBitrary:WAVeform:SELect '{waveform_path}'")
+        await self._scpi.send(
+            f"SOURce1:BB:ARBitrary:WAVeform:SELect '{waveform_path}'",
+            idempotency=Idempotency.SETTING,
+        )
         await self._scpi.wait_opc()
         logger.info(f"Waveform loaded: {waveform_path}")
 
@@ -364,12 +425,16 @@ class RSSignalGeneratorDriver:
                 f"{self._info.model} does not have an ARB generator",
                 self.address,
             )
-        await self._scpi.send("SOURce1:BB:ARBitrary:STATe ON")
+        await self._scpi.send(
+            "SOURce1:BB:ARBitrary:STATe ON", idempotency=Idempotency.SETTING
+        )
         logger.info("ARB generator ON")
 
     async def arb_off(self) -> None:
         """Disable ARB generator."""
-        await self._scpi.send("SOURce1:BB:ARBitrary:STATe OFF")
+        await self._scpi.send(
+            "SOURce1:BB:ARBitrary:STATe OFF", idempotency=Idempotency.SETTING
+        )
         logger.info("ARB generator OFF")
 
     # =========================================================================
@@ -391,7 +456,9 @@ class RSSignalGeneratorDriver:
             scpi_val = "INTernal"
         else:
             scpi_val = "EXTernal"
-        await self._scpi.send(f"SOURce1:ROSCillator:SOURce {scpi_val}")
+        await self._scpi.send(
+            f"SOURce1:ROSCillator:SOURce {scpi_val}", idempotency=Idempotency.SETTING
+        )
         logger.info(f"Reference source set to {scpi_val}")
 
     async def get_reference_source(self) -> str:
@@ -401,7 +468,9 @@ class RSSignalGeneratorDriver:
         Returns:
             Reference source string
         """
-        return await self._scpi.query("SOURce1:ROSCillator:SOURce?")
+        return await self._scpi.query(
+            "SOURce1:ROSCillator:SOURce?", idempotency=Idempotency.QUERY
+        )
 
     # =========================================================================
     # Calibration
@@ -414,7 +483,12 @@ class RSSignalGeneratorDriver:
         Returns:
             Calibration result string
         """
-        result = await self._scpi.query("CALibration:ALL?", timeout=120.0)
+        # A query in form only. `CALibration:ALL?` *performs* the calibration and
+        # reports its verdict, so a retry would run it a second time -- minutes of
+        # instrument time and a second set of stored correction data. ACTION.
+        result = await self._scpi.query(
+            "CALibration:ALL?", timeout=120.0, idempotency=Idempotency.ACTION
+        )
         logger.info(f"Calibration result: {result}")
         return result
 
@@ -438,26 +512,35 @@ class RSSignalGeneratorDriver:
         """Validate power level."""
         self._safety.validate_power(power_dbm)
 
-    async def scpi_send(self, command: str) -> None:
+    async def scpi_send(
+        self, command: str, idempotency: Idempotency = Idempotency.ACTION
+    ) -> None:
         """
         Send raw SCPI command.
 
         Args:
             command: SCPI command string
+            idempotency: Whether the transport may re-send this after a failure.
+                Callers that know the verb pass its class; the default is ACTION
+                because an unclassified command must not be duplicated.
         """
-        await self._scpi.send(command)
+        await self._scpi.send(command, idempotency=idempotency)
 
-    async def scpi_query(self, command: str) -> str:
+    async def scpi_query(
+        self, command: str, idempotency: Idempotency = Idempotency.QUERY
+    ) -> str:
         """
         Send raw SCPI query and return response.
 
         Args:
             command: SCPI query string
+            idempotency: Whether the transport may re-send this after a failure.
+                Pass ACTION for a query that also acts, such as ``CALibration:ALL?``.
 
         Returns:
             Response string
         """
-        return await self._scpi.query(command)
+        return await self._scpi.query(command, idempotency=idempotency)
 
     # =========================================================================
     # Status

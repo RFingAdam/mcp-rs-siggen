@@ -3,6 +3,7 @@
 from typing import Any
 
 from mcp.types import CallToolResult, Tool
+from scpi_core import Idempotency
 
 from . import _common
 
@@ -15,15 +16,24 @@ async def handle_configure_freq_sweep(
     start = arguments["start_freq_hz"]
     stop = arguments["stop_freq_hz"]
     sg.validate_frequency_range(start, stop)
-    await sg.scpi_send(f"SOURce1:FREQuency:STARt {start}")
-    await sg.scpi_send(f"SOURce1:FREQuency:STOP {stop}")
+    await sg.scpi_send(
+        f"SOURce1:FREQuency:STARt {start}", idempotency=Idempotency.SETTING
+    )
+    await sg.scpi_send(
+        f"SOURce1:FREQuency:STOP {stop}", idempotency=Idempotency.SETTING
+    )
     if "step_hz" in arguments:
         await sg.scpi_send(
-            f"SOURce1:SWEep:FREQuency:STEP:LINear {arguments['step_hz']}"
+            f"SOURce1:SWEep:FREQuency:STEP:LINear {arguments['step_hz']}",
+            idempotency=Idempotency.SETTING,
         )
     dwell = arguments.get("dwell_time_s", 0.01)
-    await sg.scpi_send(f"SOURce1:SWEep:FREQuency:DWELl {dwell}")
-    await sg.scpi_send("SOURce1:FREQuency:MODE SWEep")
+    await sg.scpi_send(
+        f"SOURce1:SWEep:FREQuency:DWELl {dwell}", idempotency=Idempotency.SETTING
+    )
+    # Switching FREQuency:MODE to SWEep starts the sweep running -- a state
+    # transition, not a value assignment, so it must never be re-sent.
+    await sg.scpi_send("SOURce1:FREQuency:MODE SWEep", idempotency=Idempotency.ACTION)
     return _common._format_result({
         "status": "configured",
         "mode": "frequency_sweep",
@@ -41,13 +51,18 @@ async def handle_configure_power_sweep(
     stop = arguments["stop_power_dbm"]
     sg.validate_power(start)
     sg.validate_power(stop)
-    await sg.scpi_send(f"SOURce1:POWer:STARt {start}")
-    await sg.scpi_send(f"SOURce1:POWer:STOP {stop}")
+    await sg.scpi_send(f"SOURce1:POWer:STARt {start}", idempotency=Idempotency.SETTING)
+    await sg.scpi_send(f"SOURce1:POWer:STOP {stop}", idempotency=Idempotency.SETTING)
     if "step_db" in arguments:
-        await sg.scpi_send(f"SOURce1:SWEep:POWer:STEP {arguments['step_db']}")
+        await sg.scpi_send(
+            f"SOURce1:SWEep:POWer:STEP {arguments['step_db']}",
+            idempotency=Idempotency.SETTING,
+        )
     dwell = arguments.get("dwell_time_s", 0.01)
-    await sg.scpi_send(f"SOURce1:SWEep:POWer:DWELl {dwell}")
-    await sg.scpi_send("SOURce1:POWer:MODE SWEep")
+    await sg.scpi_send(
+        f"SOURce1:SWEep:POWer:DWELl {dwell}", idempotency=Idempotency.SETTING
+    )
+    await sg.scpi_send("SOURce1:POWer:MODE SWEep", idempotency=Idempotency.ACTION)
     return _common._format_result({
         "status": "configured",
         "mode": "power_sweep",
@@ -73,12 +88,16 @@ async def handle_configure_list_mode(
         sg.validate_power(p)
     freq_str = ",".join(str(f) for f in freqs)
     pow_str = ",".join(str(p) for p in powers)
-    await sg.scpi_send(f"SOURce1:LIST:FREQuency {freq_str}")
-    await sg.scpi_send(f"SOURce1:LIST:POWer {pow_str}")
+    await sg.scpi_send(
+        f"SOURce1:LIST:FREQuency {freq_str}", idempotency=Idempotency.SETTING
+    )
+    await sg.scpi_send(f"SOURce1:LIST:POWer {pow_str}", idempotency=Idempotency.SETTING)
     dwell = arguments.get("dwell_time_s", 0.01)
     dwell_str = ",".join([str(dwell)] * len(freqs))
-    await sg.scpi_send(f"SOURce1:LIST:DWELl {dwell_str}")
-    await sg.scpi_send("SOURce1:FREQuency:MODE LIST")
+    await sg.scpi_send(
+        f"SOURce1:LIST:DWELl {dwell_str}", idempotency=Idempotency.SETTING
+    )
+    await sg.scpi_send("SOURce1:FREQuency:MODE LIST", idempotency=Idempotency.ACTION)
     return _common._format_result({
         "status": "configured",
         "mode": "list",
