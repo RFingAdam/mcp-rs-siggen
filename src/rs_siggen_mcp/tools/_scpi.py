@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from mcp.types import CallToolResult, Tool
+from scpi_core import Idempotency
 
 from . import _common
 
@@ -28,7 +29,10 @@ async def handle_scpi_send(
         "siggen_scpi_send",
     )
     sg = await _common._get_siggen(host, port)
-    await sg.scpi_send(arguments["command"])
+    # An arbitrary operator-supplied command cannot be classified, so it gets the
+    # class that never retries. Anything else would risk duplicating a *RST or an
+    # output-on that the caller was told had failed.
+    await sg.scpi_send(arguments["command"], idempotency=Idempotency.ACTION)
     return _common._format_result({"status": "sent", "command": arguments["command"]})
 
 
@@ -50,7 +54,11 @@ async def handle_scpi_query(
         "siggen_scpi_query",
     )
     sg = await _common._get_siggen(host, port)
-    response = await sg.scpi_query(arguments["command"])
+    # Same reasoning as the raw send: the tool is named "query", but the string is
+    # the operator's, and `CALibration:ALL?` is a query that acts. Never retried.
+    response = await sg.scpi_query(
+        arguments["command"], idempotency=Idempotency.ACTION
+    )
     return _common._format_result({"command": arguments["command"], "response": response})
 
 

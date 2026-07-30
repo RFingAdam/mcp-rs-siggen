@@ -12,6 +12,7 @@ import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from scpi_core import Idempotency
 
 from rs_siggen_mcp.exceptions import (
     CommunicationError,
@@ -27,37 +28,56 @@ from rs_siggen_mcp.exceptions import (
 
 
 class TestAsyncioLocks:
-    """Test that global state is protected with asyncio.Lock."""
+    """Test that global state is protected against concurrent mutation.
+
+    The connection registry moved from a module-global dict plus a bare
+    asyncio.Lock to scpi_core's ConnectionRegistry, which owns its own
+    task-reentrant lock. The invariant these tests defend is unchanged -- shared
+    connection state is never mutated by two callers at once -- so they now assert
+    it against the registry, and against observable behaviour rather than a call
+    to Lock.acquire.
+    """
 
     def test_locks_exist(self):
         """Test that asyncio.Lock instances are defined for shared state."""
+        from scpi_core import ConnectionRegistry
+
         from rs_siggen_mcp import tools
 
-        assert isinstance(tools._connection_lock, asyncio.Lock)
+        assert isinstance(tools._siggen_registry, ConnectionRegistry)
         assert isinstance(tools._template_lock, asyncio.Lock)
         assert isinstance(tools._state_lock, asyncio.Lock)
         assert isinstance(tools._limit_lock, asyncio.Lock)
 
     @pytest.mark.asyncio
     async def test_get_siggen_uses_connection_lock(self):
-        """Test that _get_siggen acquires the connection lock."""
-        from rs_siggen_mcp.tools import _connection_lock, _get_siggen
+        """Test that concurrent _get_siggen calls open exactly one connection.
 
-        lock_acquired = False
-        original_acquire = _connection_lock.acquire
+        Stronger than asserting Lock.acquire was called: this fails if the lock is
+        dropped, if it is released across the connect await, or if the cache is
+        consulted outside it -- the actual bug an unguarded registry produces.
+        """
+        from rs_siggen_mcp.tools import _common, _get_siggen
 
-        async def tracking_acquire():
-            nonlocal lock_acquired
-            lock_acquired = True
-            return await original_acquire()
+        created = []
 
-        mock_sg = AsyncMock()
-        mock_sg.is_connected = True
-        mock_sg.connect = AsyncMock()
+        async def slow_connect():
+            # Long enough that an unlocked second caller would start its own
+            # connect before the first finished.
+            await asyncio.sleep(0.05)
 
-        with patch("rs_siggen_mcp.tools._common._connection_lock.acquire", tracking_acquire), \
-             patch("rs_siggen_mcp.tools._common.get_settings") as mock_settings, \
-             patch("rs_siggen_mcp.tools._common.RSSignalGeneratorDriver", return_value=mock_sg):
+        def make_driver(**kwargs):
+            mock_sg = AsyncMock()
+            mock_sg.is_connected = True
+            mock_sg.connect = AsyncMock(side_effect=slow_connect)
+            created.append(mock_sg)
+            return mock_sg
+
+        with patch("rs_siggen_mcp.tools._common.get_settings") as mock_settings, \
+             patch(
+                 "rs_siggen_mcp.tools._common.RSSignalGeneratorDriver",
+                 side_effect=make_driver,
+             ):
             settings = MagicMock()
             settings.default_host = "192.168.1.100"
             settings.default_port = 5025
@@ -67,29 +87,65 @@ class TestAsyncioLocks:
             mock_settings.return_value = settings
 
             # Clear any existing connections
-            from rs_siggen_mcp import tools
-            tools._common._siggen_connections.clear()
+            await _common._siggen_registry.close_all()
 
-            await _get_siggen("192.168.1.100", 5025)
-            assert lock_acquired
+            first, second = await asyncio.gather(
+                _get_siggen("192.168.1.100", 5025),
+                _get_siggen("192.168.1.100", 5025),
+            )
+            assert len(created) == 1
+            assert first is second
+
+            await _common._siggen_registry.close_all()
 
     @pytest.mark.asyncio
     async def test_close_siggen_uses_connection_lock(self):
-        """Test that _close_siggen acquires the connection lock."""
-        from rs_siggen_mcp.tools import _close_siggen
+        """Test that _close_siggen releases through the lock-owning registry."""
+        from rs_siggen_mcp.tools import _close_siggen, _common
 
-        lock_acquired = False
-        from rs_siggen_mcp.tools import _connection_lock
-        original_acquire = _connection_lock.acquire
+        mock_sg = AsyncMock()
+        mock_sg.is_connected = True
 
-        async def tracking_acquire():
-            nonlocal lock_acquired
-            lock_acquired = True
-            return await original_acquire()
+        async def factory():
+            return mock_sg
 
-        with patch("rs_siggen_mcp.tools._common._connection_lock.acquire", tracking_acquire):
-            await _close_siggen("192.168.1.100", 5025)
-            assert lock_acquired
+        await _common._siggen_registry.close_all()
+        await _common._siggen_registry.acquire("192.168.1.100:5025", factory)
+
+        with patch.object(
+            _common._siggen_registry, "release", new=AsyncMock()
+        ) as release:
+            assert await _close_siggen("192.168.1.100", 5025) is True
+        release.assert_awaited_once_with("192.168.1.100:5025")
+
+        # An unknown address is still reported as not-connected without touching
+        # the registry's contents.
+        assert await _close_siggen("10.0.0.1", 5025) is False
+
+        await _common._siggen_registry.close_all()
+
+    @pytest.mark.asyncio
+    async def test_close_siggen_forces_rf_output_off(self):
+        """Dropping a connection must leave the generator in its safe state.
+
+        Forgetting a handle does not stop a carrier, so the registry's evict hook
+        sends the RF-off itself rather than trusting the driver's own disconnect
+        path or the cached rf_output_on flag.
+        """
+        from rs_siggen_mcp.tools import _close_siggen, _common
+
+        mock_sg = AsyncMock()
+        mock_sg.is_connected = True
+
+        async def factory():
+            return mock_sg
+
+        await _common._siggen_registry.close_all()
+        await _common._siggen_registry.acquire("192.168.1.100:5025", factory)
+
+        assert await _close_siggen("192.168.1.100", 5025) is True
+        mock_sg.output_off.assert_awaited_once()
+        mock_sg.disconnect.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_load_template_uses_template_lock(self):
@@ -386,18 +442,24 @@ class TestSpecificExceptionHandling:
                             f"Found 'except Exception: pass' at line {i} in state.py"
                         )
 
-    def test_no_bare_except_in_scpi_socket(self):
-        """Verify no bare 'except Exception' in scpi_socket.py."""
+    def test_no_bare_except_in_scpi_transport(self):
+        """Verify no bare 'except Exception' in the SCPI socket transport.
+
+        The transport moved to scpi_core when the three R&S servers stopped
+        carrying diverged copies of it. The property is unchanged and still worth
+        checking here, because a bare except in the transport is what turns a
+        desync into a silently stale reading in *this* server.
+        """
         import inspect
 
-        import rs_siggen_mcp.driver.scpi_socket as socket_module
+        import scpi_core.transport.socket as socket_module
 
         source = inspect.getsource(socket_module)
         lines = source.split("\n")
         for i, line in enumerate(lines, 1):
             stripped = line.strip()
             if stripped == "except:":
-                pytest.fail(f"Found bare 'except:' at line {i} in scpi_socket.py")
+                pytest.fail(f"Found bare 'except:' at line {i} in scpi_core transport")
 
     def test_no_bare_except_in_siggen_driver(self):
         """Verify no bare 'except Exception' with pass in siggen_driver.py."""
@@ -468,10 +530,18 @@ class TestCompleteTemplateApplication:
 
                 mock_siggen.configure_am.assert_called_once_with(80.0, enable=True)
                 # FM, PM, pulse should be turned off
-                mock_siggen.scpi_send.assert_any_call("SOURce1:FM:STATe OFF")
-                mock_siggen.scpi_send.assert_any_call("SOURce1:PM:STATe OFF")
-                mock_siggen.scpi_send.assert_any_call("SOURce1:PULM:STATe OFF")
-                mock_siggen.scpi_send.assert_any_call("SOURce:IQ:STATe OFF")
+                mock_siggen.scpi_send.assert_any_call(
+                    "SOURce1:FM:STATe OFF", idempotency=Idempotency.SETTING
+                )
+                mock_siggen.scpi_send.assert_any_call(
+                    "SOURce1:PM:STATe OFF", idempotency=Idempotency.SETTING
+                )
+                mock_siggen.scpi_send.assert_any_call(
+                    "SOURce1:PULM:STATe OFF", idempotency=Idempotency.SETTING
+                )
+                mock_siggen.scpi_send.assert_any_call(
+                    "SOURce:IQ:STATe OFF", idempotency=Idempotency.SETTING
+                )
         finally:
             tools_module._common._current_template = old_template
 
@@ -502,7 +572,9 @@ class TestCompleteTemplateApplication:
                 assert result.isError is False
 
                 mock_siggen.configure_fm.assert_called_once_with(75000.0, enable=True)
-                mock_siggen.scpi_send.assert_any_call("SOURce1:AM:STATe OFF")
+                mock_siggen.scpi_send.assert_any_call(
+                    "SOURce1:AM:STATe OFF", idempotency=Idempotency.SETTING
+                )
         finally:
             tools_module._common._current_template = old_template
 
@@ -533,8 +605,12 @@ class TestCompleteTemplateApplication:
                 assert result.isError is False
 
                 mock_siggen.configure_pm.assert_called_once_with(2.0, enable=True)
-                mock_siggen.scpi_send.assert_any_call("SOURce1:AM:STATe OFF")
-                mock_siggen.scpi_send.assert_any_call("SOURce1:FM:STATe OFF")
+                mock_siggen.scpi_send.assert_any_call(
+                    "SOURce1:AM:STATe OFF", idempotency=Idempotency.SETTING
+                )
+                mock_siggen.scpi_send.assert_any_call(
+                    "SOURce1:FM:STATe OFF", idempotency=Idempotency.SETTING
+                )
         finally:
             tools_module._common._current_template = old_template
 
@@ -568,7 +644,9 @@ class TestCompleteTemplateApplication:
                 mock_siggen.configure_pulse.assert_called_once_with(
                     1e-6, 10e-6, enable=True
                 )
-                mock_siggen.scpi_send.assert_any_call("SOURce1:AM:STATe OFF")
+                mock_siggen.scpi_send.assert_any_call(
+                    "SOURce1:AM:STATe OFF", idempotency=Idempotency.SETTING
+                )
         finally:
             tools_module._common._current_template = old_template
 
@@ -598,10 +676,18 @@ class TestCompleteTemplateApplication:
                 assert result.isError is False
 
                 mock_siggen.iq_on.assert_called_once()
-                mock_siggen.scpi_send.assert_any_call("SOURce1:AM:STATe OFF")
-                mock_siggen.scpi_send.assert_any_call("SOURce1:FM:STATe OFF")
-                mock_siggen.scpi_send.assert_any_call("SOURce1:PM:STATe OFF")
-                mock_siggen.scpi_send.assert_any_call("SOURce1:PULM:STATe OFF")
+                mock_siggen.scpi_send.assert_any_call(
+                    "SOURce1:AM:STATe OFF", idempotency=Idempotency.SETTING
+                )
+                mock_siggen.scpi_send.assert_any_call(
+                    "SOURce1:FM:STATe OFF", idempotency=Idempotency.SETTING
+                )
+                mock_siggen.scpi_send.assert_any_call(
+                    "SOURce1:PM:STATe OFF", idempotency=Idempotency.SETTING
+                )
+                mock_siggen.scpi_send.assert_any_call(
+                    "SOURce1:PULM:STATe OFF", idempotency=Idempotency.SETTING
+                )
         finally:
             tools_module._common._current_template = old_template
 
@@ -629,11 +715,21 @@ class TestCompleteTemplateApplication:
                 assert result.isError is False
 
                 # All modulations should be off
-                mock_siggen.scpi_send.assert_any_call("SOURce1:AM:STATe OFF")
-                mock_siggen.scpi_send.assert_any_call("SOURce1:FM:STATe OFF")
-                mock_siggen.scpi_send.assert_any_call("SOURce1:PM:STATe OFF")
-                mock_siggen.scpi_send.assert_any_call("SOURce1:PULM:STATe OFF")
-                mock_siggen.scpi_send.assert_any_call("SOURce:IQ:STATe OFF")
+                mock_siggen.scpi_send.assert_any_call(
+                    "SOURce1:AM:STATe OFF", idempotency=Idempotency.SETTING
+                )
+                mock_siggen.scpi_send.assert_any_call(
+                    "SOURce1:FM:STATe OFF", idempotency=Idempotency.SETTING
+                )
+                mock_siggen.scpi_send.assert_any_call(
+                    "SOURce1:PM:STATe OFF", idempotency=Idempotency.SETTING
+                )
+                mock_siggen.scpi_send.assert_any_call(
+                    "SOURce1:PULM:STATe OFF", idempotency=Idempotency.SETTING
+                )
+                mock_siggen.scpi_send.assert_any_call(
+                    "SOURce:IQ:STATe OFF", idempotency=Idempotency.SETTING
+                )
         finally:
             tools_module._common._current_template = old_template
 

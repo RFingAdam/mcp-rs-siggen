@@ -3,6 +3,7 @@
 from typing import Any
 
 from mcp.types import CallToolResult, Tool
+from scpi_core import Idempotency
 
 from . import _common
 
@@ -42,7 +43,10 @@ async def handle_set_arb_clock(
 ) -> CallToolResult:
     """Set ARB generator clock rate."""
     sg = await _common._get_siggen(host, port)
-    await sg.scpi_send(f"SOURce1:BB:ARBitrary:CLOCk {arguments['clock_hz']}")
+    await sg.scpi_send(
+        f"SOURce1:BB:ARBitrary:CLOCk {arguments['clock_hz']}",
+        idempotency=Idempotency.SETTING,
+    )
     return _common._format_result({
         "status": "configured",
         "arb_clock_hz": arguments["clock_hz"],
@@ -57,7 +61,9 @@ async def handle_list_waveforms(
     directory = _common.sanitize_scpi_param(
         arguments.get("directory", "/var/user/waveform")
     )
-    response = await sg.scpi_query(f"MMEMory:CATalog? '{directory}'")
+    response = await sg.scpi_query(
+        f"MMEMory:CATalog? '{directory}'", idempotency=Idempotency.QUERY
+    )
     return _common._format_result({
         "directory": directory,
         "contents": response,

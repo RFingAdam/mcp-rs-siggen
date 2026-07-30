@@ -38,6 +38,7 @@ dependencies = [
     "mcp>=1.0.0,<2.0.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
+    "scpi-core",
 ]
 
 [project.optional-dependencies]
@@ -47,10 +48,22 @@ dev = [
     "pytest-cov>=4.0",
     "ruff>=0.1.0",
     "mypy>=1.0",
+    "pyyaml>=6.0",
 ]
+sim = [
+    "pyyaml>=6.0",
+]
+
+# scpi-core is developed alongside this server rather than released to PyPI, so it
+# resolves from the sibling checkout. Editable keeps a transport fix visible here
+# without a reinstall, which matters because the desync detection this server now
+# relies on lives over there.
+[tool.uv.sources]
+scpi-core = { path = "../scpi-core", editable = true }
 
 [project.scripts]
 rs-siggen-mcp = "rs_siggen_mcp.__main__:main"
+siggen-simulator = "rs_siggen_mcp.sim.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/RFingAdam/mcp-rs-siggen"

@@ -3,6 +3,7 @@
 from typing import Any
 
 from mcp.types import CallToolResult, Tool
+from scpi_core import Idempotency
 
 from . import _common
 
@@ -32,21 +33,27 @@ async def handle_configure_iq_impairments(
     sg = await _common._get_siggen(host, port)
     if "i_offset_percent" in arguments:
         await sg.scpi_send(
-            f"SOURce:IQ:IMPairment:LEAKage:I {arguments['i_offset_percent']}"
+            f"SOURce:IQ:IMPairment:LEAKage:I {arguments['i_offset_percent']}",
+            idempotency=Idempotency.SETTING,
         )
     if "q_offset_percent" in arguments:
         await sg.scpi_send(
-            f"SOURce:IQ:IMPairment:LEAKage:Q {arguments['q_offset_percent']}"
+            f"SOURce:IQ:IMPairment:LEAKage:Q {arguments['q_offset_percent']}",
+            idempotency=Idempotency.SETTING,
         )
     if "gain_imbalance_db" in arguments:
         await sg.scpi_send(
-            f"SOURce:IQ:IMPairment:IQRatio:MAGNitude {arguments['gain_imbalance_db']}"
+            f"SOURce:IQ:IMPairment:IQRatio:MAGNitude {arguments['gain_imbalance_db']}",
+            idempotency=Idempotency.SETTING,
         )
     if "quadrature_offset_deg" in arguments:
         await sg.scpi_send(
-            f"SOURce:IQ:IMPairment:QUADrature:ANGLe {arguments['quadrature_offset_deg']}"
+            f"SOURce:IQ:IMPairment:QUADrature:ANGLe {arguments['quadrature_offset_deg']}",
+            idempotency=Idempotency.SETTING,
         )
-    await sg.scpi_send("SOURce:IQ:IMPairment:STATe ON")
+    await sg.scpi_send(
+        "SOURce:IQ:IMPairment:STATe ON", idempotency=Idempotency.SETTING
+    )
     return _common._format_result({"status": "iq_impairments_configured"})
 
 

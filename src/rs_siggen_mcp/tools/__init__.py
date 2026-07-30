@@ -47,11 +47,12 @@ from ._templates import get_tools as _template_tools
 logger = logging.getLogger("rs_siggen_mcp.tools")
 
 # Re-export shared state for backwards compatibility with tests
-_connection_lock = _common._connection_lock
 _template_lock = _common._template_lock
 _state_lock = _common._state_lock
 _limit_lock = _common._limit_lock
-_siggen_connections = _common._siggen_connections
+# The dict-plus-asyncio.Lock pair that used to hold live connections is now a
+# scpi_core ConnectionRegistry, which owns its own lock and an idle TTL.
+_siggen_registry = _common._siggen_registry
 _current_template = _common._current_template
 _limit_manager = _common._limit_manager
 _state_manager = _common._state_manager

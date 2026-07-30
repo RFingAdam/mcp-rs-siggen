@@ -21,7 +21,8 @@
 ┌──────────────────────────────────────────────────────────────────┐
 │  Driver / transport                                              │
 │  • driver/siggen_driver.py — SCPI command layer                  │
-│  • driver/scpi_socket.py   — async TCP/IP transport              │
+│  • scpi_core.transport     — async TCP/IP or VISA transport       │
+│  • scpi_core.registry      — live connections, idle TTL, RF-off   │
 │  • safety/validators.py    — power / freq clamps + SCPI sanitize │
 └──────────────────────────────────────────────────────────────────┘
                               │
@@ -31,8 +32,29 @@
                   R&S signal generator (SMW / SMBV / SGT / SMA / …)
 ```
 
-The driver is asyncio-native. Concurrent tool calls are serialized
-per-connection by a single `asyncio.Lock` to keep SCPI framing intact.
+The driver is asyncio-native. The transport comes from the shared `scpi-core`
+package, which the three R&S servers now have in common instead of three
+diverged copies. Two of its guarantees are load-bearing here:
+
+- **A query is atomic.** Its send and its matching read are held under one
+  task-reentrant lock. The copy this server used to carry took the lock
+  separately for each half, so two concurrent tool calls could each receive the
+  other's answer.
+- **A read timeout poisons the stream.** The instrument may still send that
+  response later, leaving every subsequent reply offset by one. The transport
+  marks itself desynced and refuses further use until proven clean; because a
+  desynced transport reports `is_connected == False`, the connection registry
+  reconnects it on the next tool call. Previously a single timeout meant every
+  later query silently returned the *previous* query's value.
+
+Every SCPI call site states an `Idempotency` (QUERY / SETTING / ACTION) which
+decides whether the transport may re-send after a transport failure. RF output
+on/off, `*RST`, `SYSTem:PRESet`, sweep starts and calibration are ACTION and are
+never retried.
+
+Connections are cached by `scpi_core.ConnectionRegistry` with an idle TTL. Its
+evict hook sends `OUTPut1:STATe OFF` before any handle is dropped: forgetting a
+connection does not stop a carrier.
 
 ## Source layout
 
@@ -41,7 +63,7 @@ mcp-rs-siggen/
 ├── src/rs_siggen_mcp/
 │   ├── server.py           # MCP server (stdio transport)
 │   ├── config.py           # pydantic-settings
-│   ├── exceptions.py
+│   ├── exceptions.py       # re-export shim over scpi_core.exceptions
 │   ├── driver/
 │   ├── models/
 │   ├── tools/              # 53 MCP tool definitions
@@ -60,6 +82,7 @@ mcp-rs-siggen/
 │   │   └── _limits.py
 │   ├── templates/          # Built-in signal templates
 │   ├── safety/             # Power/freq validators + SCPI sanitize
+│   ├── sim/                # Node map + `siggen-simulator` (no hardware needed)
 │   └── state.py
 ├── tests/
 └── docs/

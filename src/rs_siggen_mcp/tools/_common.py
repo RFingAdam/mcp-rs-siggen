@@ -3,9 +3,10 @@
 import asyncio
 import json
 import logging
-from typing import Any
+from typing import Any, cast
 
 from mcp.types import CallToolResult, TextContent
+from scpi_core import ConnectionRegistry, SCPITransport
 
 from ..config import get_settings as get_settings
 from ..driver import RSSignalGeneratorDriver
@@ -29,13 +30,9 @@ from ..templates import SignalTemplate
 logger = logging.getLogger("rs_siggen_mcp.tools")
 
 # Locks for protecting shared mutable state (Issue #4)
-_connection_lock = asyncio.Lock()
 _template_lock = asyncio.Lock()
 _state_lock = asyncio.Lock()
 _limit_lock = asyncio.Lock()
-
-# Global connection manager
-_siggen_connections: dict[str, RSSignalGeneratorDriver] = {}
 
 # Global template storage
 _current_template: SignalTemplate | None = None
@@ -45,6 +42,40 @@ _limit_manager = LimitManager()
 
 # Global state manager
 _state_manager = StateManager()
+
+
+async def _force_output_off(key: str, transport: SCPITransport) -> None:
+    """Drive the generator to its safe state before its handle is dropped.
+
+    A signal generator differs from a measuring instrument here: forgetting a
+    connection does not stop the carrier. Without this hook an idle eviction
+    leaves the output radiating with nothing left holding a handle to switch it
+    off, so the safe state has to be forced while the connection is still open.
+
+    Runs for every drop -- idle expiry, explicit disconnect, shutdown -- and its
+    failures are logged and swallowed by the registry, which is correct: an
+    instrument that has already gone away must not block the eviction.
+    """
+    driver = cast(RSSignalGeneratorDriver, transport)
+    logger.info("Forcing RF output off before releasing %s", key)
+    await driver.output_off()
+
+
+# Live connections, keyed "host:port".
+#
+# Replaces a module-global dict plus a bare asyncio.Lock. The dict had no expiry,
+# so a connection opened by one tool call lived until the process died -- and with
+# it whatever RF state the last caller left. `ConnectionRegistry` adds the idle TTL
+# and, more importantly, the eviction hook above, so a forgotten generator is
+# switched off rather than merely forgotten.
+#
+# The registry is typed over `SCPITransport`; what it actually holds here is the
+# driver. That is deliberate: the registry only ever calls `is_connected`,
+# `connect()` and `disconnect()`, all of which the driver provides, and caching the
+# driver rather than its socket is what preserves per-connection state (identity,
+# last-set frequency and power) across tool calls. The evict hook needs the driver
+# anyway, since `output_off()` is a driver-level operation.
+_siggen_registry = ConnectionRegistry(on_evict=_force_output_off)
 
 
 def _get_connection_key(host: str, port: int) -> str:
@@ -61,13 +92,7 @@ async def _get_siggen(
     port = port or settings.default_port
     key = _get_connection_key(host, port)
 
-    async with _connection_lock:
-        if key in _siggen_connections:
-            sg = _siggen_connections[key]
-            if sg.is_connected:
-                return sg
-
-        # Create new connection
+    async def connect() -> SCPITransport:
         sg = RSSignalGeneratorDriver(
             host=host,
             port=port,
@@ -76,19 +101,21 @@ async def _get_siggen(
             safety_limits=settings.get_safety_limits(),
         )
         await sg.connect()
-        _siggen_connections[key] = sg
-        return sg
+        return cast(SCPITransport, sg)
+
+    transport = await _siggen_registry.acquire(key, connect)
+    return cast(RSSignalGeneratorDriver, transport)
 
 
 async def _close_siggen(host: str, port: int) -> bool:
     """Close signal generator connection."""
     key = _get_connection_key(host, port)
-    async with _connection_lock:
-        if key in _siggen_connections:
-            sg = _siggen_connections.pop(key)
-            await sg.disconnect()
-            return True
+    if key not in _siggen_registry.keys():
         return False
+    # release() runs the evict hook, so the RF output goes off here too rather
+    # than relying on the driver's own disconnect path.
+    await _siggen_registry.release(key)
+    return True
 
 
 def _format_result(result: Any) -> CallToolResult:

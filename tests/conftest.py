@@ -7,21 +7,26 @@ import pytest
 
 
 @pytest.fixture
-def mock_scpi_socket():
-    """Create mock SCPI socket."""
-    socket = AsyncMock()
-    socket.is_connected = True
-    socket.address = "192.168.1.100:5025"
+def mock_scpi_transport():
+    """Stand-in for the scpi_core SCPITransport the driver is handed.
+
+    Named for the interface rather than the implementation: the driver now gets
+    whatever `create_transport` returns -- a raw socket or a VISA session -- so a
+    test that asserted on socket internals would be asserting on the wrong thing.
+    """
+    transport = AsyncMock()
+    transport.is_connected = True
+    transport.address = "192.168.1.100:5025"
 
     # Default responses
-    socket.query = AsyncMock(
+    transport.query = AsyncMock(
         return_value="Rohde&Schwarz,SMW200A,1412.0000K02/123456,4.30.047.29"
     )
-    socket.send = AsyncMock()
-    socket.wait_opc = AsyncMock(return_value=True)
-    socket.query_float_list = AsyncMock(return_value=[1e9, 2e9, 3e9])
+    transport.send = AsyncMock()
+    transport.wait_opc = AsyncMock(return_value=True)
+    transport.query_float_list = AsyncMock(return_value=[1e9, 2e9, 3e9])
 
-    return socket
+    return transport
 
 
 @pytest.fixture
@@ -41,13 +46,13 @@ def skip_without_siggen(siggen_test_config):
 
 
 @pytest.fixture
-def mock_driver(mock_scpi_socket):
+def mock_driver(mock_scpi_transport):
     """Create a mock RSSignalGeneratorDriver."""
     from rs_siggen_mcp.driver.siggen_driver import RSSignalGeneratorDriver
     from rs_siggen_mcp.models.siggen_types import InstrumentInfo, SignalGeneratorFamily
 
     driver = RSSignalGeneratorDriver.__new__(RSSignalGeneratorDriver)
-    driver._scpi = mock_scpi_socket
+    driver._scpi = mock_scpi_transport
     driver._safety = MagicMock()
     driver._rf_output_on = False
     driver._frequency_hz = None

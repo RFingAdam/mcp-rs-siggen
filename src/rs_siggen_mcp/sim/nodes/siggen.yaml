@@ -1,0 +1,360 @@
+# R&S signal-generator node map for scpi-sim.
+#
+# This server shipped with no simulator at all -- its README called it "a thin
+# driver, no built-in simulator" -- which meant every change to it had to be
+# either mocked or aimed at a real generator with a real output connector. This
+# map closes that: `siggen-simulator` serves the command surface below on TCP
+# 5025 so the tools can be exercised with nothing attached.
+#
+# Scope is deliberately narrow. Every node here is one this repo actually sends
+# or reads, derived by walking `src/` and `tests/` for SCPI literals rather than
+# transcribing an SMW200A manual. A node the server never touches would be
+# untested fiction, and a *missing* node is loud (the simulator queues
+# -113 Undefined header and answers a query with silence), which is exactly the
+# signal you want.
+#
+# `verified:` here means "exercised end to end by this repo": the mnemonic is
+# written and read back, or asserted by the test suite, so a typo would surface.
+# `verified: false` means the mnemonic came from a driver string literal that
+# nothing reads back, and its reported default and value domain are R&S
+# convention rather than anything measured -- those are the bench checklist.
+# List them with `siggen-simulator --list-unverified`.
+#
+# Instance suffixes are modelled as the ranges this server addresses, not the
+# instrument's full capability. `SOURce<1-2>` covers both the `SOURce:` and
+# `SOURce1:` forms the driver mixes; where a range is a guess it says so.
+
+idn: "Rohde&Schwarz,SMW200A-SIMULATOR,SIM-0001,V0.0.0-sim"
+
+banner_note: >-
+  Modelled as an SMW200A with the ARB and digital-standard options fitted. There
+  is no RF connector behind this socket: OUTPut1:STATe ON changes a dict entry.
+
+# Reported by *OPT?. Chosen so the capability checks in models/siggen_types.py see
+# a fully-fitted box; trim it to model a generator without the ARB.
+options:
+  - SMW-B10    # baseband generator with ARB
+  - SMW-K55    # EUTRA/LTE
+  - SMW-K144   # 5G NR
+  - SMW-K54    # WLAN
+  - SMW-K60    # Bluetooth
+
+# Real durations, before --time-scale. A preset and an internal calibration
+# genuinely take this long; code that assumes otherwise breaks on the bench
+# rather than in CI.
+durations:
+  - pattern: '^\*RST'
+    seconds: 2.0
+  - pattern: '^SYST(em)?:PRES(et)?'
+    seconds: 2.0
+  - pattern: '^CAL(ibration)?:ALL'
+    seconds: 30.0
+  - pattern: '^SOUR(ce)?\d*:BB:\w+:PRES(et)?'
+    seconds: 1.0
+  - pattern: '^SOUR(ce)?\d*:BB:ARB(itrary)?:TRIG(ger)?:EXEC(ute)?'
+    seconds: 2.0
+  - pattern: '^SOUR(ce)?\d*:BB:ARB(itrary)?:WAV(eform)?:SEL(ect)?'
+    seconds: 1.0
+  - pattern: '^OUTP(ut)?\d*:STAT(e)?'
+    seconds: 0.05
+
+nodes:
+  # ---------------------------------------------------------------- IEEE 488.2
+  - path: '*IDN'
+    settable: false
+  - path: '*OPT'
+    settable: false
+  - path: '*OPC'
+  - path: '*CLS'
+    queryable: false
+  - path: '*RST'
+    queryable: false
+  - path: SYSTem:ERRor
+    settable: false
+  - path: SYSTem:PRESet
+    queryable: false
+    # No effects block needed: the engine special-cases *RST and SYSTem:PRESet to
+    # clear the settings store, so every node -- OUTPut1:STATe included -- falls
+    # back to the default below, which is OFF. The generator really does go quiet.
+
+  # -------------------------------------------------------------- RF output core
+  - path: OUTPut<1-2>:STATe
+    key: out{n}.state
+    default: 'OFF'
+  - path: SOURce<1-2>:FREQuency:CW
+    key: source{n}.freq
+    default: 1E+09
+  - path: SOURce<1-2>:FREQuency
+    key: source{n}.freq
+    default: 1E+09
+    verified: false
+    note: >-
+      documented as an alias of FREQuency:CW and shares its store key so the two
+      round-trip together. Only reached through raw SCPI; bench-verify that this
+      firmware accepts the bare form.
+  - path: SOURce<1-2>:POWer:LEVel:IMMediate:AMPLitude
+    key: source{n}.power
+    default: '-30'
+  - path: SOURce<1-2>:POWer
+    key: source{n}.power
+    default: '-30'
+    note: >-
+      shares source{n}.power with POWer:LEVel:IMMediate:AMPLitude because the
+      driver writes the long form and reads the short one back.
+  - path: SOURce<1-2>:PHASe
+    key: source{n}.phase
+    default: '0'
+  - path: SOURce<1-2>:ROSCillator:SOURce
+    key: source{n}.rosc
+    default: INT
+    note: >-
+      the default must stay inside the set set_reference_source() accepts
+      (INT | INTernal | EXT | EXTernal) or a capture/restore round trip fails.
+
+  # ------------------------------------------------------------ analog modulation
+  - path: SOURce<1-2>:AM:DEPTh
+    key: source{n}.am.depth
+    default: '0'
+  - path: SOURce<1-2>:AM:STATe
+    key: source{n}.am.state
+    default: 'OFF'
+  - path: SOURce<1-2>:FM:DEViation
+    key: source{n}.fm.deviation
+    default: '0'
+  - path: SOURce<1-2>:FM:STATe
+    key: source{n}.fm.state
+    default: 'OFF'
+  - path: SOURce<1-2>:PM:DEViation
+    key: source{n}.pm.deviation
+    default: '0'
+  - path: SOURce<1-2>:PM:STATe
+    key: source{n}.pm.state
+    default: 'OFF'
+  - path: SOURce<1-2>:PULM:WIDTh
+    key: source{n}.pulm.width
+    default: 1E-06
+  - path: SOURce<1-2>:PULM:PERiod
+    key: source{n}.pulm.period
+    default: 1E-05
+  - path: SOURce<1-2>:PULM:STATe
+    key: source{n}.pulm.state
+    default: 'OFF'
+  - path: SOURce<1-2>:MODulation:ALL:STATe
+    key: source{n}.modulation.all.state
+    default: 'OFF'
+    verified: false
+    # Without these effects the simulator would store the write and leave every
+    # individual modulation node still reporting ON, so a test could not tell a
+    # working all-off from one that silently did nothing.
+    #
+    # Effects are unconditional -- the node map cannot express "only when the
+    # argument is OFF" -- which is sound here because modulation_all_off() is the
+    # only caller and it only ever writes OFF. A raw-SCPI `... ON` is mismodelled.
+    effects:
+      source*.am.state: 'OFF'
+      source*.fm.state: 'OFF'
+      source*.pm.state: 'OFF'
+      source*.pulm.state: 'OFF'
+    note: >-
+      IQ is deliberately absent from the effects: on R&S hardware this covers the
+      analog modulations and leaves the baseband path alone. That scope is the
+      bench question, and it is why this node is unverified.
+
+  # --------------------------------------------------------------- IQ modulation
+  - path: SOURce<1-2>:IQ:STATe
+    key: source{n}.iq.state
+    default: 'OFF'
+  - path: SOURce<1-2>:IQ:IMPairment:STATe
+    key: source{n}.iq.imp.state
+    default: 'OFF'
+    verified: false
+  - path: SOURce<1-2>:IQ:IMPairment:LEAKage:I
+    key: source{n}.iq.imp.leak.i
+    default: '0'
+    verified: false
+  - path: SOURce<1-2>:IQ:IMPairment:LEAKage:Q
+    key: source{n}.iq.imp.leak.q
+    default: '0'
+    verified: false
+  - path: SOURce<1-2>:IQ:IMPairment:IQRatio:MAGNitude
+    key: source{n}.iq.imp.iqratio
+    default: '0'
+    verified: false
+  - path: SOURce<1-2>:IQ:IMPairment:QUADrature:ANGLe
+    key: source{n}.iq.imp.quad
+    default: '0'
+    verified: false
+
+  # ------------------------------------------------------------------------- ARB
+  - path: SOURce<1-2>:BB:ARBitrary:STATe
+    key: source{n}.bb.arb.state
+    default: 'OFF'
+  - path: SOURce<1-2>:BB:ARBitrary:WAVeform:SELect
+    key: source{n}.bb.arb.waveform
+    default: '""'
+  - path: SOURce<1-2>:BB:ARBitrary:CLOCk
+    key: source{n}.bb.arb.clock
+    default: 1E+08
+    verified: false
+  - path: SOURce<1-2>:BB:ARBitrary:TRIGger:EXECute
+    queryable: false
+    # Carries no argument. An empty default is what tells the engine not to raise
+    # -109 Missing parameter for an argument-less write.
+    default: ''
+    verified: false
+  - path: MMEMory:CATalog
+    settable: false
+    default: '0,0'
+    verified: false
+    note: >-
+      real generators answer <used>,<free>,"name,type,size",... The stub keeps the
+      leading pair so a parser sees the right shape; nothing here lists files.
+
+  # ----------------------------------------------------------------- calibration
+  - path: CALibration:ALL
+    settable: false
+    default: '0'
+    verified: false
+    note: 0 means pass on R&S. Read as a query but it performs the calibration.
+  - path: CALibration:DATE
+    settable: false
+    default: '"2026-01-01"'
+    verified: false
+
+  # --------------------------------------------------------- sweep and list mode
+  - path: SOURce<1-2>:FREQuency:MODE
+    key: source{n}.freq.mode
+    default: CW
+    verified: false
+    note: values CW | FIXed | SWEep | LIST. Writing SWEep starts the sweep running.
+  - path: SOURce<1-2>:FREQuency:STARt
+    key: source{n}.freq.start
+    default: 1E+08
+    verified: false
+  - path: SOURce<1-2>:FREQuency:STOP
+    key: source{n}.freq.stop
+    default: 1E+09
+    verified: false
+  - path: SOURce<1-2>:SWEep:FREQuency:STEP:LINear
+    key: source{n}.sweep.freq.step
+    default: 1E+06
+    verified: false
+  - path: SOURce<1-2>:SWEep:FREQuency:DWELl
+    key: source{n}.sweep.freq.dwell
+    default: '0.01'
+    verified: false
+  - path: SOURce<1-2>:POWer:MODE
+    key: source{n}.power.mode
+    default: CW
+    verified: false
+  - path: SOURce<1-2>:POWer:STARt
+    key: source{n}.power.start
+    default: '-30'
+    verified: false
+  - path: SOURce<1-2>:POWer:STOP
+    key: source{n}.power.stop
+    default: '0'
+    verified: false
+  - path: SOURce<1-2>:SWEep:POWer:STEP
+    key: source{n}.sweep.power.step
+    default: '1'
+    verified: false
+  - path: SOURce<1-2>:SWEep:POWer:DWELl
+    key: source{n}.sweep.power.dwell
+    default: '0.01'
+    verified: false
+  - path: SOURce<1-2>:LIST:FREQuency
+    key: source{n}.list.freq
+    default: 1E+09
+    verified: false
+  - path: SOURce<1-2>:LIST:POWer
+    key: source{n}.list.power
+    default: '-30'
+    verified: false
+  - path: SOURce<1-2>:LIST:DWELl
+    key: source{n}.list.dwell
+    default: '0.01'
+    verified: false
+
+  # ------------------------------------------------------------ digital standards
+  # Every node in this block is write-only in this server -- nothing reads any of
+  # it back -- so none of it is verified. The mnemonics are the driver's own
+  # strings; the defaults and value domains are R&S convention.
+  - path: SOURce<1-2>:BB:EUTRa:PRESet
+    queryable: false
+    verified: false
+    # A subsystem preset that left EUTRa:STATe reporting ON would let a broken
+    # teardown pass, so the effect is declared. Declaring effects also marks the
+    # node argument-less.
+    effects:
+      source*.bb.eutra.state: 'OFF'
+  - path: SOURce<1-2>:BB:EUTRa:DL:BW
+    key: source{n}.bb.eutra.dl.bw
+    default: BW20_00
+    verified: false
+    note: driver emits BW1_40 for 1.4 MHz and BW<n>_00 otherwise
+  - path: SOURce<1-2>:BB:EUTRa:DUPLex
+    key: source{n}.bb.eutra.duplex
+    default: FDD
+    verified: false
+  - path: SOURce<1-2>:BB:EUTRa:STATe
+    key: source{n}.bb.eutra.state
+    default: 'OFF'
+    verified: false
+  - path: SOURce<1-2>:BB:NR5G:PRESet
+    queryable: false
+    verified: false
+    effects:
+      source*.bb.nr5g.state: 'OFF'
+  - path: SOURce<1-2>:BB:NR5G:SCHed:CELL<1-4>:SUBF<0-9>:BWP<0-3>:RBNUmber
+    key: source{n}.bb.nr5g.cell{n}.subf{n}.bwp{n}.rbnumber
+    default: '52'
+    verified: false
+    note: >-
+      the driver only ever addresses CELL1:SUBF0:BWP0; the ranges here are a guess
+      at the instrument's real limits and are not a claim about them.
+  - path: SOURce<1-2>:BB:NR5G:SCHed:CELL<1-4>:SUBF<0-9>:BWP<0-3>:SCSPacing
+    key: source{n}.bb.nr5g.cell{n}.subf{n}.bwp{n}.scspacing
+    default: N30
+    verified: false
+    note: >-
+      the driver emits SCS15 / SCS30 / SCS60 style values while R&S documents
+      N15 / N30. Which spelling this firmware accepts is a bench question.
+  - path: SOURce<1-2>:BB:NR5G:STATe
+    key: source{n}.bb.nr5g.state
+    default: 'OFF'
+    verified: false
+  - path: SOURce<1-2>:BB:WLNN:PRESet
+    queryable: false
+    verified: false
+    effects:
+      source*.bb.wlnn.state: 'OFF'
+  - path: SOURce<1-2>:BB:WLNN:FBLock<1-4>:STANdard
+    key: source{n}.bb.wlnn.fblock{n}.standard
+    default: AX
+    verified: false
+    note: the driver only addresses FBLock1; the 1-4 range is unconfirmed
+  - path: SOURce<1-2>:BB:WLNN:FBLock<1-4>:BW
+    key: source{n}.bb.wlnn.fblock{n}.bw
+    default: BW20
+    verified: false
+  - path: SOURce<1-2>:BB:WLNN:STATe
+    key: source{n}.bb.wlnn.state
+    default: 'OFF'
+    verified: false
+  - path: SOURce<1-2>:BB:BTOoth:PRESet
+    queryable: false
+    verified: false
+    effects:
+      source*.bb.btooth.state: 'OFF'
+  - path: SOURce<1-2>:BB:BTOoth:PACKet:TYPE
+    key: source{n}.bb.btooth.packet.type
+    default: DH1
+    verified: false
+    note: >-
+      packet-type enumerations are radio-dependent (BR/EDR vs LE) and the tool
+      passes its `mode` argument straight through, so the accepted set is unknown.
+  - path: SOURce<1-2>:BB:BTOoth:STATe
+    key: source{n}.bb.btooth.state
+    default: 'OFF'
+    verified: false

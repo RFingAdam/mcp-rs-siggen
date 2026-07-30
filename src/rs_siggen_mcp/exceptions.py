@@ -1,61 +1,62 @@
-"""Custom exceptions for signal generator operations.
+"""Exception surface for signal generator operations.
 
-This module defines all exceptions at the package root level to avoid
-circular import issues between driver and safety modules.
+The bodies moved to :mod:`scpi_core.exceptions` when the SCPI transport was
+extracted into the shared library: none of them described anything specific to a
+signal generator, and three servers carrying three diverged copies meant an
+``except CommunicationError`` in one could not catch the other's failure.
+
+This module stays because the names are part of this server's import surface --
+``from ..exceptions import CommunicationError`` appears throughout ``tools/`` and
+``driver/`` -- and because ``SignalGeneratorError`` is the name callers catch to
+mean "anything this server raised". It is now an alias for
+:class:`scpi_core.exceptions.InstrumentError`, so the whole hierarchy is shared
+and cross-server handlers work.
+
+``MeasurementError`` stayed here as a real class: it names a generator-side
+failure (a waveform or signal-generation step that did not complete) and has no
+counterpart in the shared library, which deliberately models only transport,
+configuration and safety.
 """
 
+from scpi_core.exceptions import (
+    CommunicationError as CommunicationError,
+)
+from scpi_core.exceptions import (
+    ConfigurationError as ConfigurationError,
+)
+from scpi_core.exceptions import (
+    ConnectionError as ConnectionError,
+)
+from scpi_core.exceptions import (
+    DesyncError as DesyncError,
+)
+from scpi_core.exceptions import (
+    InstrumentError,
+)
+from scpi_core.exceptions import (
+    SafetyError as SafetyError,
+)
+from scpi_core.exceptions import (
+    TimeoutError as TimeoutError,
+)
 
-class SignalGeneratorError(Exception):
-    """Base exception for signal generator errors."""
-
-    def __init__(self, message: str, address: str | None = None):
-        self.message = message
-        self.address = address
-        super().__init__(f"{message}" + (f" (address: {address})" if address else ""))
+#: Historical base-exception name for this server. Every exception raised here
+#: is still catchable as ``SignalGeneratorError``.
+SignalGeneratorError = InstrumentError
 
 
-class ConnectionError(SignalGeneratorError):
-    """Error connecting to signal generator."""
-
-    pass
-
-
-class CommunicationError(SignalGeneratorError):
-    """Error communicating with signal generator."""
-
-    pass
-
-
-class ConfigurationError(SignalGeneratorError):
-    """Error configuring signal generator settings."""
-
-    pass
-
-
-class MeasurementError(SignalGeneratorError):
+class MeasurementError(InstrumentError):
     """Error during measurement or signal generation."""
 
-    pass
 
-
-class SafetyError(SignalGeneratorError):
-    """Safety limit violation."""
-
-    def __init__(
-        self,
-        message: str,
-        parameter: str,
-        value: float,
-        limit: float,
-        address: str | None = None,
-    ):
-        self.parameter = parameter
-        self.value = value
-        self.limit = limit
-        super().__init__(message, address)
-
-
-class TimeoutError(SignalGeneratorError):
-    """Operation timed out."""
-
-    pass
+__all__ = [
+    "CommunicationError",
+    "ConfigurationError",
+    "ConnectionError",
+    "DesyncError",
+    "InstrumentError",
+    "MeasurementError",
+    "SafetyError",
+    "SignalGeneratorError",
+    "TimeoutError",
+]

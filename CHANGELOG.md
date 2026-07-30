@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Concurrent queries could return each other's answers.** The local SCPI
+  transport took its `asyncio.Lock` separately for the send and the read of a
+  query, so two overlapping tool calls crossed responses — silently, with
+  plausible-looking values. The shared `scpi-core` transport holds both halves
+  under one task-reentrant lock.
+- **A single read timeout served stale readings forever.** After a timed-out
+  read the instrument may still send that response later, leaving the stream
+  offset by one; the old transport had no notion of this and every subsequent
+  query returned the *previous* query's value with no error. The stream is now
+  marked desynced and refuses further use, and because a desynced transport
+  reports `is_connected == False` the connection registry reconnects it on the
+  next tool call.
+- **RF-output commands were blindly retried.** Retry is now decided by an
+  explicit `Idempotency` on every SCPI call site: RF output on/off, `*RST`,
+  `SYSTem:PRESet`, subsystem presets, trigger-execute and sweep starts are
+  ACTION and are never re-sent; value assignments are SETTING; reads are QUERY.
+- **An idle connection could be dropped while still radiating.** Connections
+  now live in `scpi_core.ConnectionRegistry` with an idle TTL, and its evict
+  hook sends `OUTPut1:STATe OFF` before any handle is released.
+
+### Added
+- **Offline simulator** (`siggen-simulator`): serves the generator's SCPI
+  command surface from `sim/nodes/siggen.yaml` so the tool surface can be
+  exercised with no hardware attached. Includes the fault injection that makes
+  timeout and desync handling testable (`--drop-responses`, `--close-after`,
+  `--slow-response-ms`). Nodes not confirmed against hardware are marked and
+  listable with `--list-unverified`.
+- `sim` extra (`pyyaml`) for the simulator.
+
+### Changed
+- **Depends on `scpi-core`** for the SCPI transport, connection registry,
+  exception hierarchy and injection/path validators, replacing local copies
+  that had diverged from the other two R&S servers. `driver/scpi_socket.py` is
+  gone; `SCPISocket` is re-exported from `driver/` for existing imports.
+- `exceptions.py` is a re-export shim over `scpi_core.exceptions`, with
+  `SignalGeneratorError` aliased to `InstrumentError` so cross-server handlers
+  work. Every previously exported name is still importable.
+- `safety/validators.py` keeps `sanitize_scpi_param` / `validate_safe_path` as
+  adapters over `scpi_core.safety`, preserving this server's exact refusal
+  wording. `SafetyLimits` and `SafetyValidator` are unchanged.
+
 ## [0.2.0] — 2026-05-13
 
 ### Changed
