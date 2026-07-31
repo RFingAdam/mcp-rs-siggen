@@ -18,12 +18,14 @@ def create_server() -> Server:
     """Create and configure MCP server."""
     server = Server("rs-siggen-mcp")
 
-    @server.list_tools()
+    # mcp.server.Server.list_tools/call_tool have no type stubs upstream, so
+    # both the call and the resulting decorator are untyped from mypy's view.
+    @server.list_tools()  # type: ignore[no-untyped-call, untyped-decorator]
     async def list_tools() -> list[Tool]:
         """Return list of available tools."""
         return get_tools()
 
-    @server.call_tool()
+    @server.call_tool()  # type: ignore[untyped-decorator]
     async def call_tool(name: str, arguments: dict[str, Any]) -> CallToolResult:
         """Handle tool invocation."""
         logger.debug("Tool called: %s with args: %s", name, arguments)

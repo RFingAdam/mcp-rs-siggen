@@ -430,7 +430,7 @@ class StateManager:
         Returns:
             List of dictionaries with filename and summary info
         """
-        states = []
+        states: list[dict[str, Any]] = []
         if not self.state_directory.exists():
             return states
 
