@@ -9,7 +9,7 @@ from mcp.types import CallToolResult, TextContent
 from scpi_core import ConnectionRegistry, SCPITransport
 
 from ..config import get_settings as get_settings
-from ..driver import RSSignalGeneratorDriver
+from ..driver import RSSignalGeneratorDriver as RSSignalGeneratorDriver
 from ..exceptions import (
     CommunicationError as CommunicationError,
 )

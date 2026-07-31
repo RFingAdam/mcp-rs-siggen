@@ -5,7 +5,7 @@ a unified interface via get_tools() and handle_tool().
 """
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from mcp.types import CallToolResult, Tool
 
@@ -218,9 +218,9 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> CallToolResult:
 
         # discover handler has a different signature (no host/port params)
         if name == "siggen_discover":
-            return await handler(arguments)
+            return cast(CallToolResult, await handler(arguments))
 
-        return await handler(arguments, host, port)
+        return cast(CallToolResult, await handler(arguments, host, port))
 
     except ConnectionError as e:
         logger.error("Connection error in %s: %s", name, e)

@@ -61,7 +61,9 @@ async def handle_discover(arguments: dict[str, Any]) -> CallToolResult:
     })
 
 
-async def handle_connect(arguments: dict[str, Any], host, port) -> CallToolResult:
+async def handle_connect(
+    arguments: dict[str, Any], host: str | None, port: int | None
+) -> CallToolResult:
     """Handle connect to signal generator."""
     sg = await _common._get_siggen(host, port)
     return _common._format_result({
@@ -71,7 +73,9 @@ async def handle_connect(arguments: dict[str, Any], host, port) -> CallToolResul
     })
 
 
-async def handle_disconnect(arguments: dict[str, Any], host, port) -> CallToolResult:
+async def handle_disconnect(
+    arguments: dict[str, Any], host: str | None, port: int | None
+) -> CallToolResult:
     """Handle disconnect from signal generator."""
     settings = get_settings()
     h = host or settings.default_host
@@ -82,21 +86,27 @@ async def handle_disconnect(arguments: dict[str, Any], host, port) -> CallToolRe
     )
 
 
-async def handle_identify(arguments: dict[str, Any], host, port) -> CallToolResult:
+async def handle_identify(
+    arguments: dict[str, Any], host: str | None, port: int | None
+) -> CallToolResult:
     """Handle instrument identification."""
     sg = await _common._get_siggen(host, port)
     info = await sg.identify()
     return _common._format_result(info.to_dict())
 
 
-async def handle_get_status(arguments: dict[str, Any], host, port) -> CallToolResult:
+async def handle_get_status(
+    arguments: dict[str, Any], host: str | None, port: int | None
+) -> CallToolResult:
     """Handle get instrument status."""
     sg = await _common._get_siggen(host, port)
     status = sg.get_status()
     return _common._format_result(status)
 
 
-async def handle_get_model_info(arguments: dict[str, Any], host, port) -> CallToolResult:
+async def handle_get_model_info(
+    arguments: dict[str, Any], host: str | None, port: int | None
+) -> CallToolResult:
     """Handle get model info."""
     sg = await _common._get_siggen(host, port)
     if sg.info:
