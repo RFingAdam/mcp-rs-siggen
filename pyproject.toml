@@ -38,7 +38,11 @@ dependencies = [
     "mcp>=1.0.0,<2.0.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
-    "scpi-core",
+    # PEP 508 direct reference (not a bare name): "scpi-core" also exists on
+    # PyPI as an unrelated package by a different author in the same problem
+    # domain, so a bare name silently resolves to the wrong library for any
+    # installer that doesn't read [tool.uv.sources] (e.g. plain pip).
+    "scpi-core @ git+https://github.com/RFingAdam/scpi-core.git@main",
 ]
 
 [project.optional-dependencies]
@@ -54,12 +58,18 @@ sim = [
     "pyyaml>=6.0",
 ]
 
-# scpi-core is developed alongside this server rather than released to PyPI, so it
-# resolves from the sibling checkout. Editable keeps a transport fix visible here
-# without a reinstall, which matters because the desync detection this server now
-# relies on lives over there.
 [tool.uv.sources]
-scpi-core = { path = "../scpi-core", editable = true }
+# The git URL lives in `dependencies` so pip honours it too; uv pins the
+# exact commit in uv.lock. For local development across both repos, uncomment
+# the path form below and do not commit it uncommented (CI has no sibling
+# scpi-core checkout, so a committed path override breaks the build there).
+# scpi-core = { path = "../scpi-core", editable = true }
+
+[tool.hatch.metadata]
+# scpi-core is depended on by git URL, which hatchling treats as a direct
+# reference. Required because the name is taken on PyPI by an unrelated
+# package -- see the note in [project.dependencies].
+allow-direct-references = true
 
 [project.scripts]
 rs-siggen-mcp = "rs_siggen_mcp.__main__:main"
