@@ -1129,7 +1129,7 @@ requires-dist = [
     { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6.0" },
     { name = "pyyaml", marker = "extra == 'sim'", specifier = ">=6.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
-    { name = "scpi-core", editable = "../scpi-core" },
+    { name = "scpi-core", git = "https://github.com/RFingAdam/scpi-core.git?rev=main" },
 ]
 provides-extras = ["dev", "sim"]
 
@@ -1161,21 +1161,7 @@ wheels = [
 [[package]]
 name = "scpi-core"
 version = "0.1.0"
-source = { editable = "../scpi-core" }
-
-[package.metadata]
-requires-dist = [
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21" },
-    { name = "pyvisa", marker = "extra == 'visa'", specifier = ">=1.13" },
-    { name = "pyvisa-py", marker = "extra == 'visa'", specifier = ">=0.7" },
-    { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6.0" },
-    { name = "pyyaml", marker = "extra == 'sim'", specifier = ">=6.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
-    { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6.0" },
-]
-provides-extras = ["visa", "sim", "dev"]
+source = { git = "https://github.com/RFingAdam/scpi-core.git?rev=main#d90b7027cdabbe56ac6a42e075f45167e6119897" }
 
 [[package]]
 name = "sse-starlette"
