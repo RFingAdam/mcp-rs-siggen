@@ -13,7 +13,7 @@ Brief description of the changes.
 -
 
 ## Testing
-
+- [ ] I have read and agree to [CLA.md](../CLA.md) for this contribution.
 - [ ] All existing tests pass (`uv run pytest tests/ -v`)
 - [ ] New tests added for new functionality
 - [ ] Lint passes (`uv run ruff check src/ tests/`)
