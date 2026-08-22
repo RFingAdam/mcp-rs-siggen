@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Concurrent queries could return each other's answers.** The local SCPI
   transport took its `asyncio.Lock` separately for the send and the read of a
-  query, so two overlapping tool calls crossed responses — silently, with
+  query, so two overlapping tool calls crossed responses: silently, with
   plausible-looking values. The shared `scpi-core` transport holds both halves
   under one task-reentrant lock.
 - **A single read timeout served stale readings forever.** After a timed-out
@@ -49,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adapters over `scpi_core.safety`, preserving this server's exact refusal
   wording. `SafetyLimits` and `SafetyValidator` are unchanged.
 
-## [0.2.0] — 2026-05-13
+## [0.2.0]: 2026-05-13
 
 ### Changed
 - **License: Apache-2.0 → AGPL-3.0-or-later.** Aligns with the

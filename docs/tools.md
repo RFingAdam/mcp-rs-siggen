@@ -130,4 +130,4 @@ under the `rs-siggen` namespace when the server is loaded by an MCP client.
 Tool definitions live in
 [`src/rs_siggen_mcp/tools/`](../src/rs_siggen_mcp/tools/), one module per
 category. Each tool has a complete JSON-Schema `inputSchema` declared at
-registration — arguments, defaults, and units are documented inline there.
+registration: arguments, defaults, and units are documented inline there.

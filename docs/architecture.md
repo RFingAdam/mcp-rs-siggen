@@ -12,7 +12,7 @@
 └──────────────────────────────────────────────────────────────────┘
                               │
 ┌──────────────────────────────────────────────────────────────────┐
-│  Orchestration — tools/ (53 tools, 13 categories)                │
+│  Orchestration: tools/ (53 tools, 13 categories)                │
 │  • _connection · _rf_output · _modulation · _iq · _arb           │
 │  • _digital_standards · _sweep · _reference · _calibration       │
 │  • _scpi · _templates · _state · _limits · _common               │
@@ -20,10 +20,10 @@
                               │
 ┌──────────────────────────────────────────────────────────────────┐
 │  Driver / transport                                              │
-│  • driver/siggen_driver.py — SCPI command layer                  │
-│  • scpi_core.transport     — async TCP/IP or VISA transport       │
-│  • scpi_core.registry      — live connections, idle TTL, RF-off   │
-│  • safety/validators.py    — power / freq clamps + SCPI sanitize │
+│  • driver/siggen_driver.py: SCPI command layer                  │
+│  • scpi_core.transport    : async TCP/IP or VISA transport       │
+│  • scpi_core.registry     : live connections, idle TTL, RF-off   │
+│  • safety/validators.py   : power / freq clamps + SCPI sanitize │
 └──────────────────────────────────────────────────────────────────┘
                               │
                   TCP/IP SCPI (default port 5025)
@@ -90,7 +90,7 @@ mcp-rs-siggen/
 
 ## Position in eng-mcp-suite
 
-`mcp-rs-siggen` sits in the **lab-gear** layer — it generates physical RF
+`mcp-rs-siggen` sits in the **lab-gear** layer. It generates physical RF
 under SCPI control.
 
 ```
@@ -108,14 +108,14 @@ under SCPI control.
 
 ### Feeds (this MCP produces output that)…
 
-- **mcp-rs-spectrum-analyzer** — coordinated stimulus during EVM /
+- **mcp-rs-spectrum-analyzer**: coordinated stimulus during EVM /
   spectrum-flatness testing.
-- **mcp-rs-cmw500** — stimulus paired with the CMW500 analyzer for
+- **mcp-rs-cmw500**: stimulus paired with the CMW500 analyzer for
   vendor-independent RX sweeps.
 
 ### Consumes (this MCP accepts input from)…
 
-- **Operator / AI agent** — frequency, power, modulation type, digital
+- **Operator / AI agent**: frequency, power, modulation type, digital
   standard.
 
 ### Workflow bundles that include this MCP
@@ -135,6 +135,6 @@ under SCPI control.
   `siggen_configure_5gnr`, `siggen_configure_wlan`,
   `siggen_configure_bluetooth` each have sensible defaults so an agent
   doesn't have to thread 20 SCPI parameters to get a usable signal.
-- **Disconnect turns RF off first.** Belt-and-braces safety — closing the
+- **Disconnect turns RF off first.** Belt-and-braces safety: closing the
   connection always emits `OUTP OFF` before disconnect, so a dropped
   session never leaves the generator unexpectedly radiating.

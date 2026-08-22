@@ -31,7 +31,7 @@ Register the MCP server with Claude Desktop:
 
 Restart your MCP client.
 
-## Step 1 — connect
+## Step 1: connect
 
 > *"Connect to the siggen and tell me its model."*
 
@@ -46,7 +46,7 @@ Restart your MCP client.
 }
 ```
 
-## Step 2 — configure NR 100 MHz
+## Step 2: configure NR 100 MHz
 
 > *"Set up 5G NR, 100 MHz channel, 3.5 GHz center, −110 dBm. Use the nr_100mhz template if it matches."*
 
@@ -57,7 +57,7 @@ siggen_set_frequency(frequency_hz=3.5e9)
 siggen_set_power(power_dbm=-110)
 ```
 
-## Step 3 — power sweep
+## Step 3: power sweep
 
 > *"Configure a power sweep from −110 to −60 dBm, 1 dB step, dwell 100 ms."*
 
@@ -67,7 +67,7 @@ siggen_configure_power_sweep(
 )
 ```
 
-## Step 4 — output on, run
+## Step 4: output on, run
 
 > *"Turn the output on. The receiver MCP will measure BLER at each step."*
 
@@ -82,7 +82,7 @@ step. When complete:
 siggen_output_off()
 ```
 
-## Step 5 — snapshot
+## Step 5: snapshot
 
 > *"Save state so I can replay this sweep tomorrow."*
 
@@ -95,7 +95,7 @@ siggen_save_state(path="nr100_sens_sweep.json")
 ## What just happened
 
 Five plain-English turns set up a 5G NR 100 MHz reference signal, ran a
-50-point power sweep, and snapshotted the configuration — without writing
+50-point power sweep, and snapshotted the configuration: without writing
 a single SCPI line. The state file replays identically in the next agent
 session, so the same sweep on the next DUT is one tool call away.
 

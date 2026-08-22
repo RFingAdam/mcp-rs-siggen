@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/logo-banner.svg" alt="mcp-rs-siggen — R&S signal generators (SMW / SMBV / SGT / SGS / SMA / SMB / SMC)" width="100%"/>
+<img src="assets/logo-banner.svg" alt="mcp-rs-siggen: R&S signal generators (SMW / SMBV / SGT / SGS / SMA / SMB / SMC)" width="100%"/>
 
 <br/>
 
@@ -11,7 +11,7 @@
 [![eng-mcp-suite](https://img.shields.io/badge/eng--mcp--suite-member-22D3EE.svg)](https://github.com/RFingAdam/eng-mcp-suite)
 
 **Drive Rohde & Schwarz signal generators from any MCP-compatible AI client.**
-**TCP/IP SCPI — 53 tools across CW / analog / IQ / ARB / digital-standard (LTE, 5G NR, WLAN, Bluetooth) signal generation.**
+**TCP/IP SCPI: 53 tools across CW / analog / IQ / ARB / digital-standard (LTE, 5G NR, WLAN, Bluetooth) signal generation.**
 
 [Quick start](#quick-start) ·
 [Tools](#tools) ·
@@ -31,7 +31,7 @@
 >
 > For offline work there is a simulator: `siggen-simulator` serves the
 > generator's SCPI command surface on TCP 5025 so the tools can be exercised
-> with nothing attached. It produces synthetic values only — anything measured
+> with nothing attached. It produces synthetic values only. Anything measured
 > against it is measuring nothing.
 
 ## Offline simulator
@@ -54,7 +54,7 @@ deliberately rather than hoped about: `--drop-responses`, `--extra-responses`,
 server that automates R&S signal generators via direct TCP/IP SCPI. The
 generator family covers vector (SMW200A, SMBV100B, SMM100A, SMCV100B), SGMA
 RF sources (SGT100A, SGS100A), and analog/microwave generators (SMA100B,
-SMB100B) — frequencies up to 67 GHz, IQ bandwidths up to 2 GHz.
+SMB100B): frequencies up to 67 GHz, IQ bandwidths up to 2 GHz.
 
 Drive it from Claude Desktop, Claude Code, OpenAI Agents SDK, or any other
 MCP client. The server handles CW output, analog modulation (AM/FM/PM/Pulse),
@@ -71,7 +71,7 @@ templates.
   or run as an MCP server for AI-agent automation.
 - ⚡ **Direct TCP/IP SCPI.** No VISA install needed; talks straight to port
   5025.
-- ✅ **Digital-standards coverage.** LTE, 5G NR, WLAN, Bluetooth — single
+- ✅ **Digital-standards coverage.** LTE, 5G NR, WLAN, Bluetooth: single
   tool per standard with sensible defaults.
 - 🔒 **AGPL-3.0-or-later.** SCPI-injection-guarded, path-traversal-protected,
   safety limits on power and frequency.
@@ -222,12 +222,12 @@ Full tool reference in [`docs/tools.md`](docs/tools.md).
 | ----- | ---- | ------------- | ------------ | ---------------- |
 | **SMW200A** | Vector | 67 GHz | 2 GHz | MIMO, digital standards, ARB |
 | **SMBV100B** | Vector | 6 GHz | 1 GHz | Digital standards, ARB |
-| **SMM100A** | Vector | 44 GHz | — | Modulation, ARB |
-| **SMCV100B** | Vector | 7.125 GHz | — | Digital standards |
+| **SMM100A** | Vector | 44 GHz | n/a | Modulation, ARB |
+| **SMCV100B** | Vector | 7.125 GHz | n/a | Digital standards |
 | **SGT100A** | SGMA vector | 6 GHz | 1 GHz | Compact, SGMA |
-| **SGS100A** | SGMA CW | 12.75 GHz | — | CW-only, SGMA |
-| **SMA100B** | Analog | 67 GHz | — | Ultra-low phase noise |
-| **SMB100B** | Analog microwave | 40 GHz | — | Microwave |
+| **SGS100A** | SGMA CW | 12.75 GHz | n/a | CW-only, SGMA |
+| **SMA100B** | Analog | 67 GHz | n/a | Ultra-low phase noise |
+| **SMB100B** | Analog microwave | 40 GHz | n/a | Microwave |
 
 ---
 
@@ -252,14 +252,14 @@ Load by name with `siggen_load_template`, then `siggen_apply_template` to push.
 
 ## Security
 
-- **SCPI input sanitization** — all user-provided string parameters validated
+- **SCPI input sanitization**. All user-provided string parameters validated
   against injection patterns (semicolons, newlines, command sequences).
-- **Path-traversal protection** — file paths for state save/load validated
+- **Path-traversal protection**: file paths for state save/load validated
   against directory traversal.
-- **Raw SCPI guard** — direct SCPI command passthrough disablable via
+- **Raw SCPI guard**: direct SCPI command passthrough disablable via
   `SIGGEN_ALLOW_RAW_SCPI=false`.
-- **Safety limits** — configurable maximum power and frequency clamps.
-- **Async locks** — thread-safe access to shared mutable state.
+- **Safety limits**: configurable maximum power and frequency clamps.
+- **Async locks**: thread-safe access to shared mutable state.
 
 See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
@@ -270,10 +270,10 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 `mcp-rs-siggen` fits in the following [eng-mcp-suite](https://github.com/RFingAdam/eng-mcp-suite)
 workflow bundles:
 
-- **`lab-automation`** — pair with `copper-mountain-vna-mcp`,
+- **`lab-automation`**: pair with `copper-mountain-vna-mcp`,
   `mcp-rs-spectrum-analyzer`, and `mcp-rs-cmw500` for end-to-end RF
   bench-test workflows driven from a single agent session.
-- **`rx-sensitivity`** — drive controlled stimulus while a sibling analyzer
+- **`rx-sensitivity`**: drive controlled stimulus while a sibling analyzer
   measures the result.
 
 ```bash
@@ -284,10 +284,10 @@ eng-mcp-suite install --workflow lab-automation
 
 ## Documentation
 
-- 📘 **[Quick Start](docs/index.md)** — install through first call.
-- 🛠️ **[Tool reference](docs/tools.md)** — every MCP tool, every argument.
-- 📐 **[Usage examples](docs/usage.md)** — an RX-sensitivity sweep walkthrough.
-- 🏗️ **[Architecture](docs/architecture.md)** — how this MCP fits in eng-mcp-suite.
+- 📘 **[Quick Start](docs/index.md)**: install through first call.
+- 🛠️ **[Tool reference](docs/tools.md)**. Every MCP tool, every argument.
+- 📐 **[Usage examples](docs/usage.md)**. An RX-sensitivity sweep walkthrough.
+- 🏗️ **[Architecture](docs/architecture.md)**: how this MCP fits in eng-mcp-suite.
 - 📝 **[Changelog](CHANGELOG.md)**
 
 ---
@@ -298,7 +298,7 @@ eng-mcp-suite install --workflow lab-automation
 
 [![eng-mcp-suite](https://img.shields.io/badge/eng--mcp--suite-engineering%20MCP%20catalog-22D3EE?style=for-the-badge)](https://github.com/RFingAdam/eng-mcp-suite)
 
-<sub>Part of [eng-mcp-suite](https://github.com/RFingAdam/eng-mcp-suite) — an open
+<sub>Part of [eng-mcp-suite](https://github.com/RFingAdam/eng-mcp-suite). An open
 umbrella of MCP servers for RF / EMC / PCB / signal-integrity engineering. Drop
 into the `lab-automation` workflow bundle with
 `eng-mcp-suite install --workflow lab-automation`.</sub>
@@ -326,22 +326,22 @@ align with the eng-mcp-suite toolkit-wide AGPL move.
 
 ## Commercial licensing
 
-This project is licensed under AGPL-3.0-or-later. A commercial license —
-for embedding in a closed-source product, hosting as a paid service
-without AGPL's share-back obligations, or proprietary redistribution —
+This project is licensed under AGPL-3.0-or-later. A commercial license
+(for embedding in a closed-source product, hosting as a paid service
+without AGPL's share-back obligations, or proprietary redistribution)
 is available on a case-by-case basis. See [eng-mcp-suite's licensing
 policy](https://github.com/RFingAdam/eng-mcp-suite/blob/main/LICENSE_SUMMARY.md#commercial-licensing)
 or open an issue and tag `@RFingAdam`.
 
 ## Acknowledgments
 
-- **Rohde & Schwarz** — for the published SCPI command references covering
+- **Rohde & Schwarz**: for the published SCPI command references covering
   the SMW / SMBV / SGT / SGS / SMA / SMB / SMC families.
-- **The MCP working group** — for the [Model Context Protocol](https://modelcontextprotocol.io)
+- **The MCP working group**: for the [Model Context Protocol](https://modelcontextprotocol.io)
   specification.
 
 <div align="center">
 
-<sub>Part of <a href="https://github.com/RFingAdam/eng-mcp-suite">eng-mcp-suite</a> — built for RF engineers, PCB designers, EMC labs, and AI agents.</sub>
+<sub>Part of <a href="https://github.com/RFingAdam/eng-mcp-suite">eng-mcp-suite</a>: built for RF engineers, PCB designers, EMC labs, and AI agents.</sub>
 
 </div>

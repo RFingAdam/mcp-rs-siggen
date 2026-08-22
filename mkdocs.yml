@@ -1,5 +1,5 @@
 site_name: mcp-rs-siggen
-site_description: R&S signal generators (SMW / SMBV / SGT / SGS / SMA / SMB / SMC) — MCP server with 53 tools
+site_description: R&S signal generators (SMW / SMBV / SGT / SGS / SMA / SMB / SMC): MCP server with 53 tools
 site_url: https://rfingadam.github.io/mcp-rs-siggen/
 repo_url: https://github.com/RFingAdam/mcp-rs-siggen
 repo_name: RFingAdam/mcp-rs-siggen
